@@ -539,12 +539,18 @@ def create_subject():
     if Subject.query.filter_by(code=code).first():
         return jsonify({"error": f"Subject code '{code}' already exists."}), 409
 
+    split_pref = str(data.get("split_preference", "3_HOUR_BLOCK")).strip()
+    if split_pref not in {"3_HOUR_BLOCK", "1.5_HOUR_SPLIT"}:
+        split_pref = "3_HOUR_BLOCK"
+
     subject = Subject(
         code=code,
         title=title,
         units=units,
         subject_type=subject_type,
         hours_per_week=hours_per_week,
+        split_preference=split_pref,
+        preferred_session_type="SPLIT" if split_pref == "1.5_HOUR_SPLIT" else "STRAIGHT",
     )
     db.session.add(subject)
     db.session.flush()
@@ -607,6 +613,19 @@ def update_subject(subject_id: int):
             subject.hours_per_week = hpw
         except (ValueError, TypeError):
             return jsonify({"error": "Hours per week must be a positive integer."}), 400
+
+    if "split_preference" in data:
+        sp = str(data["split_preference"]).strip()
+        if sp in {"3_HOUR_BLOCK", "1.5_HOUR_SPLIT"}:
+            subject.split_preference = sp
+            subject.preferred_session_type = "SPLIT" if sp == "1.5_HOUR_SPLIT" else "STRAIGHT"
+
+    if "preferred_session_type" in data:
+        pst = str(data["preferred_session_type"]).strip().upper()
+        if pst in {"SPLIT", "STRAIGHT"}:
+            subject.preferred_session_type = pst
+            if "split_preference" not in data:
+                subject.split_preference = "1.5_HOUR_SPLIT" if pst == "SPLIT" else "3_HOUR_BLOCK"
 
     audit = AuditLog(
         user_id=session.get("user_id"),
@@ -841,7 +860,7 @@ def assign_subject_to_faculty(faculty_id: int):
 
     for item in raw_subjects:
         s_id = item.get("subject_id") if isinstance(item, dict) else item
-        item_split_pref = (item.get("split_preference") if isinstance(item, dict) else None) or "1.5_HOUR_SPLIT"
+        item_split_pref = (item.get("split_preference") if isinstance(item, dict) else None) or "3_HOUR_BLOCK"
         if not s_id:
             continue
 

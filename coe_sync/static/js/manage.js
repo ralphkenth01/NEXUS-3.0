@@ -676,6 +676,11 @@ function renderSubjectsTable(subjects) {
         const badgeIcon = isMajor ? "★" : "○";
         const badgeLabel = isMajor ? "Major" : "Minor";
 
+        const isSplit = sub.split_preference === "1.5_HOUR_SPLIT" || sub.preferred_session_type === "SPLIT";
+        const formatBadgeClass = isSplit
+          ? "background: rgba(139, 92, 246, 0.1); color: #6D28D9; border: 1px solid rgba(139, 92, 246, 0.25);"
+          : "background: rgba(16, 185, 129, 0.1); color: #047857; border: 1px solid rgba(16, 185, 129, 0.25);";
+
         return `
     <tr>
       <td><strong>${escapeHtml(sub.code)}</strong></td>
@@ -689,6 +694,12 @@ function renderSubjectsTable(subjects) {
       <td><span class="badge badge-${sub.subject_type}">${sub.subject_type}</span></td>
       <td>${sub.hours_per_week} hrs/wk</td>
       <td>
+        <select class="form-select form-select-sm" onchange="quickUpdateSubjectSlotDuration(${sub.id}, this.value)" style="font-size: 11.5px; font-weight: 700; padding: 3px 8px; border-radius: 6px; cursor: pointer; ${formatBadgeClass}">
+          <option value="3_HOUR_BLOCK" ${!isSplit ? "selected" : ""}>3-Hr Straight Block</option>
+          <option value="1.5_HOUR_SPLIT" ${isSplit ? "selected" : ""}>2x 1.5-Hr Split</option>
+        </select>
+      </td>
+      <td>
         <div class="table-actions admin-only">
           <button class="btn btn-secondary btn-sm" onclick="openEditModal('subjects', ${sub.id})">Edit</button>
           <button class="btn btn-danger btn-sm" onclick="deleteEntity('subjects', ${sub.id})">Delete</button>
@@ -700,6 +711,28 @@ function renderSubjectsTable(subjects) {
     )
     .join("");
 }
+
+window.quickUpdateSubjectSlotDuration = async function(subjectId, newPref) {
+  try {
+    const res = await API.put(`/api/subjects/${subjectId}`, {
+      split_preference: newPref,
+      preferred_session_type: newPref === "1.5_HOUR_SPLIT" ? "SPLIT" : "STRAIGHT"
+    });
+    if (res.status === "success") {
+      showToast(`Slot duration updated to ${newPref === "1.5_HOUR_SPLIT" ? "2x 1.5-Hr Split" : "3-Hr Straight Block"}`);
+      const sub = masterDataCache.subjects?.find(s => s.id === subjectId);
+      if (sub) {
+        sub.split_preference = newPref;
+        sub.preferred_session_type = newPref === "1.5_HOUR_SPLIT" ? "SPLIT" : "STRAIGHT";
+      }
+      fetchSubjects();
+    } else {
+      showToast(res.error || "Failed to update slot duration", true);
+    }
+  } catch (err) {
+    showToast(err.message || "Failed to update slot duration", true);
+  }
+};
 
 // -------------------------------------------------------------
 // Standard Reusable Action Modal System
@@ -869,6 +902,16 @@ function buildModalForm(entity, data = null) {
         <label class="form-label" for="inp-hours">Hours Per Week *</label>
         <input class="form-input" type="number" id="inp-hours" name="hours_per_week" min="1" max="20" required placeholder="e.g. 3" value="${data ? data.hours_per_week : "3"}">
         <span class="form-error" id="err-hours_per_week"></span>
+      </div>
+      <div class="form-field">
+        <label class="form-label" for="inp-split-pref">Slot Duration Preference</label>
+        <select class="form-select" id="inp-split-pref" name="split_preference">
+          <option value="3_HOUR_BLOCK" ${!data || data.split_preference !== "1.5_HOUR_SPLIT" ? "selected" : ""}>3-Hr Straight Block (Default)</option>
+          <option value="1.5_HOUR_SPLIT" ${data && data.split_preference === "1.5_HOUR_SPLIT" ? "selected" : ""}>2x 1.5-Hr Split</option>
+        </select>
+        <span class="field-help" style="font-size:11px; color:#64748B; margin-top:3px; display:block;">
+          Determines whether the solver schedules this subject as 3 hours straight or splits it into two half sessions.
+        </span>
       </div>
     `;
   }

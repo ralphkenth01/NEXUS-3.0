@@ -406,8 +406,8 @@ def load_and_clean_data_final_sql(sql_file_path: Path = None) -> Dict[str, Any]:
 
         is_gen = (prog == "GEN")
         req_grouping = is_lab or code.endswith("D") or code.endswith("F") or "DESIGN" in desc.upper() or "FIELD" in desc.upper()
-        pref_session = "STRAIGHT" if norm_type == "LAB" else ("SPLIT" if (hours == 3 or units == 3) else "STRAIGHT")
-        split_pref = "3_HOUR_BLOCK" if pref_session == "STRAIGHT" else "1.5_HOUR_SPLIT"
+        pref_session = "STRAIGHT"
+        split_pref = "3_HOUR_BLOCK"
 
         subjects_list.append({
             "id": row_id,
@@ -584,8 +584,8 @@ def load_and_clean_data3_sql(sql_file_path: Path = None) -> Dict[str, Any]:
 
         is_gen = (prog == "GEN")
         req_grouping = is_lab or code.endswith("D") or code.endswith("F") or "DESIGN" in desc.upper() or "FIELD" in desc.upper()
-        pref_session = "STRAIGHT" if norm_type == "LAB" else ("SPLIT" if (hours == 3 or units == 3) else "STRAIGHT")
-        split_pref = "3_HOUR_BLOCK" if pref_session == "STRAIGHT" else "1.5_HOUR_SPLIT"
+        pref_session = "STRAIGHT"
+        split_pref = "3_HOUR_BLOCK"
 
         subjects_list.append({
             "id": row_id,
@@ -699,7 +699,7 @@ def load_and_clean_data2_sql(sql_file_path: Path = None) -> Dict[str, Any]:
         title = title.replace("Desgin", "Design")
 
         prog = DEPT_MAP.get(dept_raw, "GEN")
-        split_pref = "3_HOUR_BLOCK" if norm_type == "LAB" else "1.5_HOUR_SPLIT"
+        split_pref = "3_HOUR_BLOCK"
 
         subjects_list.append({
             "id": row_id,
@@ -880,7 +880,7 @@ def load_and_clean_sql_dump(sql_file_path: Path = None) -> Dict[str, Any]:
                 split_pref = "3_HOUR_BLOCK"
             else:
                 norm_type = "LECTURE"
-                split_pref = "1.5_HOUR_SPLIT"
+                split_pref = "3_HOUR_BLOCK"
 
             subjects_list.append({
                 "code": code,

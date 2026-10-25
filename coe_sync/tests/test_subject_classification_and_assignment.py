@@ -284,6 +284,14 @@ class TestSubjectClassificationAndAssignment(unittest.TestCase):
         subgroups = {s["sub_group"] for s in dual_data["schedules"]}
         self.assertEqual(subgroups, {"G1", "G2"})
 
+        # Verify G1 is scheduled in morning and G2 in afternoon
+        g1_entry = next(s for s in dual_data["schedules"] if s["sub_group"] == "G1")
+        g2_entry = next(s for s in dual_data["schedules"] if s["sub_group"] == "G2")
+        g1_start_hour = int(g1_entry["start_time"].split(":")[0])
+        g2_start_hour = int(g2_entry["start_time"].split(":")[0])
+        self.assertLess(g1_start_hour, 12, "G1 must be scheduled in the morning")
+        self.assertGreaterEqual(g2_start_hour, 12, "G2 must be scheduled in the afternoon")
+
         # 2. Section concurrent check: G1 and G2 can run concurrently in different rooms without conflict
         g2_candidate = {
             "subject_id": sub_lab.id,
@@ -613,6 +621,58 @@ class TestSubjectClassificationAndAssignment(unittest.TestCase):
         st_m = s.start_time.hour * 60 + s.start_time.minute
         et_m = s.end_time.hour * 60 + s.end_time.minute
         self.assertEqual(et_m - st_m, 60, "Session duration must be exactly 60 minutes (1 hour)")
+
+    def test_smart_scheduler_lab_cohort_split_morning_and_afternoon(self):
+        """
+        Verify that Laboratory Cohort Splitting (G1 & G2) splits the cohort
+        into Morning (< 12:00) for G1 and Afternoon (>= 12:00) for G2.
+        """
+        from services.scheduler import run_smart_scheduler
+
+        fac = Faculty(name="Engr. Alan Turing", email="aturing@bulsu.edu.ph", program="CPE", max_units=24)
+        sec = Section(name="CPE-3B", program="CPE", year_level=3)
+        sub_lab = Subject(
+            code="CPE 312L",
+            title="Embedded Systems Laboratory",
+            units=1,
+            hours_per_week=3,
+            subject_type="LAB",
+            program="CPE",
+            year_level=3,
+            semester=1,
+        )
+        rm = Room(room_code="COE-LAB-301", room_type="LAB", department="CPE", capacity=40, is_available=True)
+
+        db.session.add_all([fac, sec, sub_lab, rm])
+        db.session.commit()
+
+        fs = FacultySubject(faculty_id=fac.id, subject_id=sub_lab.id)
+        db.session.add(fs)
+        db.session.commit()
+
+        res = run_smart_scheduler(
+            {
+                "program": "CPE",
+                "year_level": "3",
+                "section_ids": [sec.id],
+                "room_ids": [rm.id],
+                "faculty_ids": [fac.id],
+                "semester": 1,
+                "split_lab_groups": True,
+            }
+        )
+        self.assertEqual(res["status"], "success", f"Scheduler failed: {res.get('message')}")
+
+        scheds = Schedule.query.filter_by(section_id=sec.id, subject_id=sub_lab.id).all()
+        self.assertEqual(len(scheds), 2, "Expected 2 scheduled sessions (G1 & G2)")
+
+        sched_g1 = next((s for s in scheds if s.sub_group == "G1"), None)
+        sched_g2 = next((s for s in scheds if s.sub_group == "G2"), None)
+        self.assertIsNotNone(sched_g1, "Expected G1 schedule to exist")
+        self.assertIsNotNone(sched_g2, "Expected G2 schedule to exist")
+
+        self.assertLess(sched_g1.start_time.hour, 12, f"G1 must be in morning, got {sched_g1.start_time}")
+        self.assertGreaterEqual(sched_g2.start_time.hour, 12, f"G2 must be in afternoon, got {sched_g2.start_time}")
 
 
 if __name__ == "__main__":

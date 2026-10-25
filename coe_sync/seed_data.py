@@ -113,10 +113,10 @@ def seed_database(app=None, stage_demo_schedules: bool = False):
                     hours_per_week=s["hours_per_week"],
                     year_level=s["year_level"],
                     semester=s["semester"],
-                    split_preference=s.get("split_preference", "1.5_HOUR_SPLIT"),
+                    split_preference=s.get("split_preference", "3_HOUR_BLOCK"),
                     is_general=s.get("is_general", False),
                     requires_grouping=s.get("requires_grouping", False),
-                    preferred_session_type=s.get("preferred_session_type", "SPLIT"),
+                    preferred_session_type=s.get("preferred_session_type", "STRAIGHT"),
                 )
             )
         db.session.add_all(subjects)

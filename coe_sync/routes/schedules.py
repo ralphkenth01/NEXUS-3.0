@@ -9,6 +9,7 @@ Endpoints:
 - PATCH /api/schedules/<id>/status: Publish / unpublish schedule
 """
 
+from datetime import time
 from flask import Blueprint, request, jsonify, session
 from models import (
     db,
@@ -338,12 +339,64 @@ def create_schedule():
         subj = db.session.get(Subject, int(payload["subject_id"]))
         split_pref = payload.get("split_preference")
         if not split_pref:
-            split_pref = getattr(subj, "split_preference", "1.5_HOUR_SPLIT") if subj else "1.5_HOUR_SPLIT"
+            split_pref = getattr(subj, "split_preference", "3_HOUR_BLOCK") if subj else "3_HOUR_BLOCK"
 
         created_schedules = []
-        target_subgroups = ["G1", "G2"] if split_lab_groups else [sub_group]
+        if split_lab_groups:
+            # Laboratory Cohort Splitting (G1 & G2):
+            # Split into morning and afternoon slots.
+            # G1 gets morning (< 12:00); G2 gets afternoon (>= 12:00).
+            dur_mins = (et.hour * 60 + et.minute) - (st.hour * 60 + st.minute)
+            if dur_mins <= 0:
+                dur_mins = 180
 
-        for grp in target_subgroups:
+            if st.hour < 12:
+                # Provided slot is morning: assign to G1
+                g1_st = st
+                g1_et = et
+                # G2 placed in afternoon (e.g. 13:00 or after)
+                g2_st_hour = max(13, min(16, (et.hour + 1)))
+                g2_st = time(g2_st_hour, 0)
+                g2_end_total = g2_st_hour * 60 + dur_mins
+                g2_et = time(min(20, g2_end_total // 60), g2_end_total % 60)
+            else:
+                # Provided slot is afternoon: assign to G2
+                g2_st = st
+                g2_et = et
+                # G1 placed in morning (e.g. 08:00)
+                g1_st_hour = 8
+                g1_st = time(g1_st_hour, 0)
+                g1_end_total = g1_st_hour * 60 + dur_mins
+                g1_et = time(g1_end_total // 60, g1_end_total % 60)
+
+            sched_g1 = Schedule(
+                subject_id=int(payload["subject_id"]),
+                section_id=int(payload["section_id"]),
+                faculty_id=faculty_id,
+                room_id=room_id,
+                day_of_week=payload["day_of_week"].strip().upper(),
+                start_time=g1_st,
+                end_time=g1_et,
+                status=status_val,
+                split_preference=split_pref,
+                sub_group="G1",
+            )
+            sched_g2 = Schedule(
+                subject_id=int(payload["subject_id"]),
+                section_id=int(payload["section_id"]),
+                faculty_id=faculty_id,
+                room_id=room_id,
+                day_of_week=payload["day_of_week"].strip().upper(),
+                start_time=g2_st,
+                end_time=g2_et,
+                status=status_val,
+                split_preference=split_pref,
+                sub_group="G2",
+            )
+            db.session.add(sched_g1)
+            db.session.add(sched_g2)
+            created_schedules.extend([sched_g1, sched_g2])
+        else:
             new_schedule = Schedule(
                 subject_id=int(payload["subject_id"]),
                 section_id=int(payload["section_id"]),
@@ -354,7 +407,7 @@ def create_schedule():
                 end_time=et,
                 status=status_val,
                 split_preference=split_pref,
-                sub_group=grp,
+                sub_group=sub_group,
             )
             db.session.add(new_schedule)
             created_schedules.append(new_schedule)

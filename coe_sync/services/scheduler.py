@@ -222,11 +222,12 @@ def run_smart_scheduler(config: Dict[str, Any], user_id: Optional[int] = None) -
             if fac_obj:
                 subject_designated_faculty[s.subject_id] = fac_obj
 
-    def is_sec_busy(sec_id, day, st, et):
+    def is_sec_busy(sec_id, day, st, et, sub_group=None):
         return any(
             s.section_id == sec_id
             and s.day_of_week == day
             and times_overlap(s.start_time, s.end_time, st, et)
+            and not (sub_group and s.sub_group and sub_group != s.sub_group)
             for s in existing_schedules
         )
 
@@ -498,55 +499,275 @@ def run_smart_scheduler(config: Dict[str, Any], user_id: Optional[int] = None) -
                     }
                     days_to_try.sort(key=lambda d: 0 if d in sec_days_with_classes else 1)
 
-                for fac in candidate_faculty:
-                    if slot_placed:
-                        break
-                    fac_id = fac.id if fac else None
+                # Check if this offering is a LAB subject with G1/G2 splitting enabled
+                should_split_this_lab = (
+                    sub.subject_type == "LAB"
+                    and split_lab_groups
+                    and (split_lab_subject_ids is None or sub.id in split_lab_subject_ids)
+                )
 
-                    for day in days_to_try:
+                if should_split_this_lab:
+                    # Laboratory Cohort Splitting (G1 & G2):
+                    # G1 is placed in Morning (< 12:00) and G2 is placed in Afternoon (>= 12:00).
+                    # Preference: Same day, same laboratory facility and same assigned faculty.
+                    morning_lab_slots = [
+                        ("07:00", "10:00"),
+                        ("08:00", "11:00"),
+                        ("10:00", "13:00"),
+                    ]
+                    afternoon_lab_slots = [
+                        ("13:00", "16:00"),
+                        ("14:00", "17:00"),
+                        ("16:00", "19:00"),
+                    ]
+
+                    for fac in candidate_faculty:
                         if slot_placed:
                             break
+                        fac_id = fac.id if fac else None
 
-                        for st_str, et_str in slots:
+                        # Strategy A: Same-day Morning (G1) and Afternoon (G2) pairing
+                        for day in days_to_try:
                             if slot_placed:
                                 break
-                            st = parse_time(st_str)
-                            et = parse_time(et_str)
-
-                            # Fast pre-check: section free
-                            if is_sec_busy(sec.id, day, st, et):
-                                continue
-
-                            # Fast pre-check: faculty free
-                            if fac_id and is_fac_busy(fac_id, day, st, et):
-                                continue
-
-                            for r in ordered_rooms:
+                            for g1_st_str, g1_et_str in morning_lab_slots:
                                 if slot_placed:
                                     break
-                                # Fast pre-check: room free
-                                if is_room_busy(r.id, day, st, et):
+                                g1_st = parse_time(g1_st_str)
+                                g1_et = parse_time(g1_et_str)
+
+                                if is_sec_busy(sec.id, day, g1_st, g1_et, sub_group="G1"):
+                                    continue
+                                if fac_id and is_fac_busy(fac_id, day, g1_st, g1_et):
                                     continue
 
-                                candidate_payload = {
-                                    "subject_id": sub.id,
-                                    "section_id": sec.id,
-                                    "faculty_id": fac_id,
-                                    "room_id": r.id,
-                                    "day_of_week": day,
-                                    "start_time": st_str,
-                                    "end_time": et_str,
-                                }
+                                for g2_st_str, g2_et_str in afternoon_lab_slots:
+                                    if slot_placed:
+                                        break
+                                    g2_st = parse_time(g2_st_str)
+                                    g2_et = parse_time(g2_et_str)
 
-                                validation = validate_schedule_slot(candidate_payload)
-                                if validation["valid"]:
-                                    should_split_this_lab = (
-                                        sub.subject_type == "LAB"
-                                        and split_lab_groups
-                                        and (split_lab_subject_ids is None or sub.id in split_lab_subject_ids)
-                                    )
-                                    groups_to_create = ["G1", "G2"] if should_split_this_lab else [None]
-                                    for grp in groups_to_create:
+                                    if times_overlap(g1_st, g1_et, g2_st, g2_et):
+                                        continue
+                                    if is_sec_busy(sec.id, day, g2_st, g2_et, sub_group="G2"):
+                                        continue
+                                    if fac_id and is_fac_busy(fac_id, day, g2_st, g2_et):
+                                        continue
+
+                                    for r in ordered_rooms:
+                                        if is_room_busy(r.id, day, g1_st, g1_et) or is_room_busy(r.id, day, g2_st, g2_et):
+                                            continue
+
+                                        p_g1 = {
+                                            "subject_id": sub.id,
+                                            "section_id": sec.id,
+                                            "faculty_id": fac_id,
+                                            "room_id": r.id,
+                                            "day_of_week": day,
+                                            "start_time": g1_st_str,
+                                            "end_time": g1_et_str,
+                                            "sub_group": "G1",
+                                        }
+                                        p_g2 = {
+                                            "subject_id": sub.id,
+                                            "section_id": sec.id,
+                                            "faculty_id": fac_id,
+                                            "room_id": r.id,
+                                            "day_of_week": day,
+                                            "start_time": g2_st_str,
+                                            "end_time": g2_et_str,
+                                            "sub_group": "G2",
+                                        }
+
+                                        v_g1 = validate_schedule_slot(p_g1)
+                                        v_g2 = validate_schedule_slot(p_g2)
+                                        if v_g1["valid"] and v_g2["valid"]:
+                                            sched_g1 = Schedule(
+                                                subject_id=sub.id,
+                                                section_id=sec.id,
+                                                faculty_id=fac_id,
+                                                room_id=r.id,
+                                                day_of_week=day,
+                                                start_time=g1_st,
+                                                end_time=g1_et,
+                                                status="PUBLISHED",
+                                                split_preference="3_HOUR_BLOCK",
+                                                sub_group="G1",
+                                            )
+                                            sched_g2 = Schedule(
+                                                subject_id=sub.id,
+                                                section_id=sec.id,
+                                                faculty_id=fac_id,
+                                                room_id=r.id,
+                                                day_of_week=day,
+                                                start_time=g2_st,
+                                                end_time=g2_et,
+                                                status="PUBLISHED",
+                                                split_preference="3_HOUR_BLOCK",
+                                                sub_group="G2",
+                                            )
+                                            db.session.add(sched_g1)
+                                            db.session.add(sched_g2)
+                                            placed_schedules.extend([sched_g1, sched_g2])
+                                            existing_schedules.extend([sched_g1, sched_g2])
+                                            db.session.flush()
+
+                                            used_rooms.add(r.id)
+                                            if fac_id:
+                                                used_faculty.add(fac_id)
+                                                faculty_units_assigned[fac_id] = faculty_units_assigned.get(fac_id, 0) + sub.units
+                                                if sub.id not in subject_designated_faculty:
+                                                    subject_designated_faculty[sub.id] = fac
+
+                                            slot_placed = True
+                                            break
+
+                        # Strategy B: Multi-day Morning (G1) and Afternoon (G2) pairing (if same-day was tightly constrained)
+                        if not slot_placed:
+                            for day_g1 in days_to_try:
+                                if slot_placed:
+                                    break
+                                for g1_st_str, g1_et_str in morning_lab_slots:
+                                    if slot_placed:
+                                        break
+                                    g1_st = parse_time(g1_st_str)
+                                    g1_et = parse_time(g1_et_str)
+
+                                    if is_sec_busy(sec.id, day_g1, g1_st, g1_et, sub_group="G1"):
+                                        continue
+                                    if fac_id and is_fac_busy(fac_id, day_g1, g1_st, g1_et):
+                                        continue
+
+                                    for day_g2 in [d for d in days_to_try if d != day_g1]:
+                                        if slot_placed:
+                                            break
+                                        for g2_st_str, g2_et_str in afternoon_lab_slots:
+                                            if slot_placed:
+                                                break
+                                            g2_st = parse_time(g2_st_str)
+                                            g2_et = parse_time(g2_et_str)
+
+                                            if is_sec_busy(sec.id, day_g2, g2_st, g2_et, sub_group="G2"):
+                                                continue
+                                            if fac_id and is_fac_busy(fac_id, day_g2, g2_st, g2_et):
+                                                continue
+
+                                            for r1 in ordered_rooms:
+                                                if is_room_busy(r1.id, day_g1, g1_st, g1_et):
+                                                    continue
+                                                for r2 in ordered_rooms:
+                                                    if is_room_busy(r2.id, day_g2, g2_st, g2_et):
+                                                        continue
+
+                                                    p_g1 = {
+                                                        "subject_id": sub.id,
+                                                        "section_id": sec.id,
+                                                        "faculty_id": fac_id,
+                                                        "room_id": r1.id,
+                                                        "day_of_week": day_g1,
+                                                        "start_time": g1_st_str,
+                                                        "end_time": g1_et_str,
+                                                        "sub_group": "G1",
+                                                    }
+                                                    p_g2 = {
+                                                        "subject_id": sub.id,
+                                                        "section_id": sec.id,
+                                                        "faculty_id": fac_id,
+                                                        "room_id": r2.id,
+                                                        "day_of_week": day_g2,
+                                                        "start_time": g2_st_str,
+                                                        "end_time": g2_et_str,
+                                                        "sub_group": "G2",
+                                                    }
+                                                    v_g1 = validate_schedule_slot(p_g1)
+                                                    v_g2 = validate_schedule_slot(p_g2)
+                                                    if v_g1["valid"] and v_g2["valid"]:
+                                                        sched_g1 = Schedule(
+                                                            subject_id=sub.id,
+                                                            section_id=sec.id,
+                                                            faculty_id=fac_id,
+                                                            room_id=r1.id,
+                                                            day_of_week=day_g1,
+                                                            start_time=g1_st,
+                                                            end_time=g1_et,
+                                                            status="PUBLISHED",
+                                                            split_preference="3_HOUR_BLOCK",
+                                                            sub_group="G1",
+                                                        )
+                                                        sched_g2 = Schedule(
+                                                            subject_id=sub.id,
+                                                            section_id=sec.id,
+                                                            faculty_id=fac_id,
+                                                            room_id=r2.id,
+                                                            day_of_week=day_g2,
+                                                            start_time=g2_st,
+                                                            end_time=g2_et,
+                                                            status="PUBLISHED",
+                                                            split_preference="3_HOUR_BLOCK",
+                                                            sub_group="G2",
+                                                        )
+                                                        db.session.add(sched_g1)
+                                                        db.session.add(sched_g2)
+                                                        placed_schedules.extend([sched_g1, sched_g2])
+                                                        existing_schedules.extend([sched_g1, sched_g2])
+                                                        db.session.flush()
+
+                                                        used_rooms.add(r1.id)
+                                                        used_rooms.add(r2.id)
+                                                        if fac_id:
+                                                            used_faculty.add(fac_id)
+                                                            faculty_units_assigned[fac_id] = faculty_units_assigned.get(fac_id, 0) + sub.units
+                                                            if sub.id not in subject_designated_faculty:
+                                                                subject_designated_faculty[sub.id] = fac
+
+                                                        slot_placed = True
+                                                        break
+                                                if slot_placed:
+                                                    break
+
+                if not slot_placed:
+                    for fac in candidate_faculty:
+                        if slot_placed:
+                            break
+                        fac_id = fac.id if fac else None
+
+                        for day in days_to_try:
+                            if slot_placed:
+                                break
+
+                            for st_str, et_str in slots:
+                                if slot_placed:
+                                    break
+                                st = parse_time(st_str)
+                                et = parse_time(et_str)
+
+                                # Fast pre-check: section free
+                                if is_sec_busy(sec.id, day, st, et):
+                                    continue
+
+                                # Fast pre-check: faculty free
+                                if fac_id and is_fac_busy(fac_id, day, st, et):
+                                    continue
+
+                                for r in ordered_rooms:
+                                    if slot_placed:
+                                        break
+                                    # Fast pre-check: room free
+                                    if is_room_busy(r.id, day, st, et):
+                                        continue
+
+                                    candidate_payload = {
+                                        "subject_id": sub.id,
+                                        "section_id": sec.id,
+                                        "faculty_id": fac_id,
+                                        "room_id": r.id,
+                                        "day_of_week": day,
+                                        "start_time": st_str,
+                                        "end_time": et_str,
+                                    }
+
+                                    validation = validate_schedule_slot(candidate_payload)
+                                    if validation["valid"]:
                                         new_sched = Schedule(
                                             subject_id=sub.id,
                                             section_id=sec.id,
@@ -557,51 +778,51 @@ def run_smart_scheduler(config: Dict[str, Any], user_id: Optional[int] = None) -
                                             end_time=et,
                                             status="PUBLISHED",
                                             split_preference=split_val,
-                                            sub_group=grp,
+                                            sub_group=None,
                                         )
                                         db.session.add(new_sched)
                                         placed_schedules.append(new_sched)
                                         existing_schedules.append(new_sched)
 
-                                    db.session.flush()
+                                        db.session.flush()
 
-                                    used_rooms.add(r.id)
-                                    if fac_id:
-                                        used_faculty.add(fac_id)
-                                        faculty_units_assigned[fac_id] = faculty_units_assigned.get(fac_id, 0) + sub.units
-                                        if sub.id not in subject_designated_faculty:
-                                            subject_designated_faculty[sub.id] = fac
+                                        used_rooms.add(r.id)
+                                        if fac_id:
+                                            used_faculty.add(fac_id)
+                                            faculty_units_assigned[fac_id] = faculty_units_assigned.get(fac_id, 0) + sub.units
+                                            if sub.id not in subject_designated_faculty:
+                                                subject_designated_faculty[sub.id] = fac
 
-                                    # Check Rule 2: If placed in overflow/interdepartmental room, create InterDepartmentRequest
-                                    r_dept = getattr(r, "department", "GEN")
-                                    if r_dept != sec_p and sec_p not in ("GEN", "", None):
-                                        import json
-                                        target_dept = r_dept if r_dept != "GEN" else "ADMIN"
-                                        alt_payload = {
-                                            "subject_id": sub.id,
-                                            "section_id": sec.id,
-                                            "faculty_id": fac_id,
-                                            "room_id": r.id,
-                                            "day_of_week": day,
-                                            "start_time": st_str,
-                                            "end_time": et_str,
-                                        }
-                                        alts = find_alternatives(alt_payload, exclude_schedule_id=new_sched.id)
-                                        inter_req = InterDepartmentRequest(
-                                            source_department=sec_p,
-                                            target_department=target_dept,
-                                            schedule_id=new_sched.id,
-                                            room_id=r.id,
-                                            requested_by_role="CHAIR",
-                                            requested_by_name=f"Program Chair ({sec_p})",
-                                            reason=f"Automated Overflow Allocation: All {sec_p} department rooms occupied for {sub.code} ({sec.name}). Room {r.room_code} requested from {r_dept}.",
-                                            status="PENDING_APPROVAL",
-                                            alternative_recommendations=json.dumps(alts) if alts else None,
-                                        )
-                                        db.session.add(inter_req)
+                                        # Check Rule 2: If placed in overflow/interdepartmental room, create InterDepartmentRequest
+                                        r_dept = getattr(r, "department", "GEN")
+                                        if r_dept != sec_p and sec_p not in ("GEN", "", None):
+                                            import json
+                                            target_dept = r_dept if r_dept != "GEN" else "ADMIN"
+                                            alt_payload = {
+                                                "subject_id": sub.id,
+                                                "section_id": sec.id,
+                                                "faculty_id": fac_id,
+                                                "room_id": r.id,
+                                                "day_of_week": day,
+                                                "start_time": st_str,
+                                                "end_time": et_str,
+                                            }
+                                            alts = find_alternatives(alt_payload, exclude_schedule_id=new_sched.id)
+                                            inter_req = InterDepartmentRequest(
+                                                source_department=sec_p,
+                                                target_department=target_dept,
+                                                schedule_id=new_sched.id,
+                                                room_id=r.id,
+                                                requested_by_role="CHAIR",
+                                                requested_by_name=f"Program Chair ({sec_p})",
+                                                reason=f"Automated Overflow Allocation: All {sec_p} department rooms occupied for {sub.code} ({sec.name}). Room {r.room_code} requested from {r_dept}.",
+                                                status="PENDING_APPROVAL",
+                                                alternative_recommendations=json.dumps(alts) if alts else None,
+                                            )
+                                            db.session.add(inter_req)
 
-                                    slot_placed = True
-                                    break
+                                        slot_placed = True
+                                        break
 
             if not slot_placed:
                 unplaced_items.append({

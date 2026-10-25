@@ -313,10 +313,10 @@ class Subject(db.Model):
             "computed_year_level": self.computed_year_level,
             "classification": self.classification,
             "semester": self.semester,
-            "split_preference": self.split_preference,
+            "split_preference": self.split_preference or "3_HOUR_BLOCK",
             "is_general": self.is_general,
             "requires_grouping": self.requires_grouping,
-            "preferred_session_type": self.preferred_session_type or "SPLIT",
+            "preferred_session_type": self.preferred_session_type or "STRAIGHT",
         }
 
     def __repr__(self) -> str:
