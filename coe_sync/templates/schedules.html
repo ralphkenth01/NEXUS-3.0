@@ -1,0 +1,541 @@
+{% extends "base.html" %}
+
+{% block title %}Schedules | NEXUS • COE SYNC{% endblock %}
+{% block breadcrumb %}Schedules{% endblock %}
+{% block page_title %}Schedules{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/timetable.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="sched-page">
+
+  <!-- ── Chair Action Row (Visible strictly to CHAIR / ADMIN / PROG_CHA) ── -->
+  {% if session.get('role') in ['CHAIR', 'ADMIN', 'PROG_CHA'] and active_role in ['CHAIR', 'ADMIN', 'PROG_CHA'] %}
+  <div class="chair-action-row admin-only" id="chair-action-row">
+    <button id="btn-create-schedule-cta" class="chair-action-pill btn-gen-sched" title="Smart Schedule Generator">
+      + Generate Schedule
+    </button>
+
+    <button id="btn-add-schedule" class="chair-action-pill" title="Add Class Slot">
+      + Add Class
+    </button>
+
+    <button id="btn-publish-all" class="chair-action-pill chair-action-pill-maroon" title="Publish All Conflict-Free Schedules">
+      Publish
+    </button>
+
+    <button id="btn-unpublish-all" class="chair-action-pill" title="Revert Schedules to Draft Mode">
+      Unpublish
+    </button>
+
+    <button id="btn-chair-review-approvals" class="chair-action-pill chair-action-pill-maroon" title="Review pending student reschedules and approvals">
+      📋 Approvals <span id="chair-resched-badge" class="badge-count" style="display:none; background:#EF4444; color:#fff; border-radius:9999px; padding:1px 6px; font-size:11px; margin-left:4px; font-weight:700;">0</span>
+    </button>
+  </div>
+  {% endif %}
+
+  <!-- ── Faculty Portal: Teaching Load Progress Bar (For Faculty Role) ── -->
+  <div id="faculty-teaching-load-bar" class="faculty-teaching-load-banner" style="display:none; margin-bottom: 16px;">
+    <div class="faculty-load-info">
+      <div class="faculty-load-title">
+        <span>👨‍🏫 Teaching Load:</span>
+        <span id="fac-load-name" style="color: var(--text-main);">Prof. Robles</span>
+      </div>
+      <div class="faculty-load-meter-wrap">
+        <div class="faculty-meter-track">
+          <div id="fac-load-meter-fill" class="faculty-meter-fill" style="width: 85%;"></div>
+        </div>
+        <span id="fac-load-numbers" style="font-size: 13px; font-weight: 700; color: #78350F;">18 / 21 Units</span>
+      </div>
+      <span id="fac-load-badge" class="status-badge mint">NORMAL LOAD</span>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <button id="btn-faculty-avail" class="btn btn-sm btn-secondary" title="Update Availability">
+        Availability
+      </button>
+      <button id="btn-faculty-review-reschedules" class="btn btn-sm btn-secondary" title="Review pending reschedule requests from students">
+        Student Reschedules <span id="fac-resched-badge" class="badge-count" style="display:none;">0</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Student Portal Banner (For Student Role) ── -->
+  <div id="student-portal-banner" class="student-portal-banner" style="display:none; margin-bottom: 16px;">
+    <div class="student-portal-title">
+      <span>🎓 Student Timetable Portal</span>
+      <span style="font-weight: normal; color: #3B82F6;">&bull;</span>
+      <span id="student-portal-section-label" style="font-weight: 700;">Official Published Schedule</span>
+      <span id="student-draft-notice" class="status-badge amber" style="display:none; margin-left: 8px;">DRAFT TIMETABLE</span>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <button id="btn-student-submit-resched" class="btn btn-sm btn-primary">
+        + Request Class Reschedule
+      </button>
+      <button id="btn-student-track-reschedules" class="btn btn-sm btn-secondary">
+        My Requests <span id="student-resched-badge" class="badge-count" style="display:none;">0</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Unified Filter & View Bar (Frosted Glass Card) ── -->
+  <div class="sched-filter-bar">
+    <div class="sched-filter-left">
+      <span class="sched-filter-prefix">Filter by:</span>
+
+      <!-- Academic Term Filter Pill -->
+      <div id="filter-wrap-term" class="filter-wrap">
+        <select class="filter-pill-select" id="filter-term" title="Select Academic Term">
+          <option value="1" selected>1st Sem AY 2026–2027 ▾</option>
+          <option value="2">2nd Sem AY 2026–2027 ▾</option>
+        </select>
+      </div>
+
+      <!-- Chair / Program Filters -->
+      <div id="filter-wrap-program" class="filter-wrap">
+        <select class="filter-pill-select" id="filter-program" title="Filter by Degree Program">
+          <option value="">All Programs ▾</option>
+          <option value="CE">CE ▾</option>
+          <option value="CPE">CPE ▾</option>
+          <option value="EE">EE ▾</option>
+          <option value="ECE">ECE ▾</option>
+          <option value="IE">IE ▾</option>
+          <option value="MFGE">MFGE ▾</option>
+          <option value="ME">ME ▾</option>
+          <option value="MEE">MEE ▾</option>
+        </select>
+      </div>
+
+      <div id="filter-wrap-section" class="filter-wrap">
+        <select class="filter-pill-select" id="filter-section" title="Filter by Cohort Section">
+          <option value="">All Section ▾</option>
+        </select>
+      </div>
+
+      <div id="filter-wrap-faculty" class="filter-wrap">
+        <select class="filter-pill-select" id="filter-faculty" title="Filter by Instructor">
+          <option value="">All Faculty ▾</option>
+        </select>
+      </div>
+
+      <div id="filter-wrap-room" class="filter-wrap">
+        <select class="filter-pill-select" id="filter-room" title="Filter by Facility / Room">
+          <option value="">All Room ▾</option>
+        </select>
+      </div>
+
+      <!-- Status Filter Pill -->
+      <div id="filter-wrap-status" class="filter-wrap">
+        <select class="filter-pill-select filter-pill" id="filter-status" title="Filter by Schedule Status">
+          <option value="">All Status</option>
+          <option value="DRAFT">Draft Only</option>
+          <option value="PUBLISHED">Published Only</option>
+        </select>
+      </div>
+
+      <!-- Faculty / Student Adaptive Filters -->
+      <div id="filter-wrap-subject" class="filter-wrap" style="display:none;">
+        <select class="filter-pill-select" id="filter-subject" title="Filter by Subject">
+          <option value="">All Subject ▾</option>
+        </select>
+      </div>
+
+      <div id="filter-wrap-room-type" class="filter-wrap" style="display:none;">
+        <select class="filter-pill-select" id="filter-room-type-sched" title="Filter by Room Type">
+          <option value="">All Types ▾</option>
+          <option value="LECTURE">Lecture</option>
+          <option value="LAB">Lab</option>
+        </select>
+      </div>
+
+      <!-- Hidden filters kept for compatibility with existing tests -->
+      <div style="display:none;">
+        <select id="filter-year"><option value="">All Year Levels</option></select>
+      </div>
+    </div>
+
+    <!-- Right Side: Room Utilization, Navigation, Week/Day Toggle -->
+    <div class="sched-filter-right">
+      <div class="sched-utilization-badge" id="sched-utilization-badge">
+        <span>Room Utilization</span>
+        <strong id="sched-room-util-val">72%</strong>
+      </div>
+
+      <!-- Academic Weekly locked: navigation date controls hidden -->
+      <div class="sched-nav-group" style="display:none;">
+        <button class="nav-pill-btn" id="btn-today">Today</button>
+        <button class="nav-arrow-btn" id="btn-prev-week" aria-label="Previous week or day">&lsaquo;</button>
+        <button class="nav-arrow-btn" id="btn-next-week" aria-label="Next week or day">&rsaquo;</button>
+      </div>
+
+      <!-- Week | Day Segmented Toggle Pill (Mint green active #7CE395) -->
+      <div class="view-segmented-toggle" id="view-segmented-toggle">
+        <button id="toggle-view-week" class="seg-btn active" type="button">Week</button>
+        <button id="toggle-view-day" class="seg-btn" type="button">Day</button>
+      </div>
+
+      <!-- Print / Export Button (Accessible for Student and Chair) -->
+      <button id="btn-print-schedule" class="btn-icon-pill" title="Print Timetable or Save to PDF">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+      </button>
+
+      <!-- Legacy hidden button for radar and week-label tests -->
+      {% if session.get('role') != 'STUDENT' and active_role != 'STUDENT' %}
+      <button id="btn-conflict-radar" style="display:none;"><span class="radar-dot" id="radar-dot"></span><span class="radar-badge" id="radar-badge">0</span></button>
+      {% endif %}
+      <span class="week-label" id="week-label" style="display:none;">Loading…</span>
+    </div>
+  </div>
+
+  <!-- Reschedule & Collision Notice Banner (Dismissible / Ignorable) -->
+  <div id="reschedule-warning-banner" class="reschedule-warning-banner" style="display:none; margin-bottom: 14px; background: linear-gradient(135deg, rgba(254,243,199,0.95), rgba(254,242,242,0.95)); border: 1px solid #F59E0B; border-left: 5px solid #D97706; border-radius: 10px; padding: 12px 18px; box-shadow: 0 4px 12px rgba(217,119,6,0.12);">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap: 14px;">
+      <div style="display:flex; gap: 12px; align-items:flex-start;">
+        <span style="font-size: 20px; line-height: 1;">⚠️</span>
+        <div>
+          <div style="font-size: 13.5px; font-weight: 800; color: #92400E;" id="reschedule-warning-title">
+            Timetable Rescheduling Notice: Automatic Slot Adjustment
+          </div>
+          <div style="font-size: 12.5px; color: #78350F; margin-top: 3px; line-height: 1.45;" id="reschedule-warning-body">
+            A class slot was moved. Colliding courses below the slot have been automatically adjusted to start at the end of the moved class.
+          </div>
+          <div style="font-size: 11.5px; color: #A16207; margin-top: 4px; font-style: italic;">
+            Note: You may safely ignore this note throughout your review of the week view.
+          </div>
+        </div>
+      </div>
+      <div style="display:flex; gap: 8px; align-items:center;">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="dismissRescheduleWarning()" style="font-size: 12px; padding: 4px 12px; background: #FFFFFF; border: 1px solid #D1D5DB; color: #374151; font-weight: 700; cursor: pointer; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);">
+          ✕ Ignore / Dismiss
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Timetable Matrix Container ── -->
+  <div class="timetable-shell">
+
+    <!-- Day Header Row -->
+    <div class="timetable-header" id="timetable-header">
+      <div class="th-gutter"></div>
+      <!-- Dynamically filled with Mon–Sun columns -->
+    </div>
+
+    <!-- Scrollable Grid Body -->
+    <div class="timetable-body" id="timetable-body">
+      <!-- Time Gutter (7:00 – 20:00) -->
+      <div class="timetable-gutter" id="timetable-gutter"></div>
+
+      <!-- Columns Container for Week View -->
+      <div class="timetable-columns" id="timetable-columns"></div>
+
+      <!-- Single Full-Width Day Container for Day View -->
+      <div class="timetable-day-column" id="timetable-day-column" style="display:none;"></div>
+
+      <!-- Empty State Watermark -->
+      <div id="timetable-empty-state" class="timetable-empty-watermark" style="display:none;">
+        <div class="watermark-title">No classes scheduled</div>
+        <div class="watermark-subtitle">Select a section or choose Generate Schedule to begin.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── 6-Item Reference Color Legend ── -->
+  <div class="timetable-footer-legend" aria-label="Subject Category Color Legend">
+    <div class="legend-item">
+      <span class="legend-swatch cat-engineering-swatch"></span>
+      <span>Engineering</span>
+    </div>
+    <div class="legend-item">
+      <span class="legend-swatch cat-gened-swatch"></span>
+      <span>General Education</span>
+    </div>
+    <div class="legend-item">
+      <span class="legend-swatch cat-language-swatch"></span>
+      <span>Language</span>
+    </div>
+    <div class="legend-item">
+      <span class="legend-swatch cat-math-physics-swatch"></span>
+      <span>Math &amp; Physics</span>
+    </div>
+    <div class="legend-item">
+      <span class="legend-swatch cat-lab-swatch"></span>
+      <span>Laboratory</span>
+    </div>
+    <div class="legend-item">
+      <span class="legend-swatch cat-nstp-pe-swatch"></span>
+      <span>NSTP / PE</span>
+    </div>
+  </div>
+
+</div><!-- /.sched-page -->
+
+
+{% if session.get('role') != 'STUDENT' and active_role != 'STUDENT' %}
+<!-- ══════════════════════════════════════════
+     CONFLICT RADAR SLIDE-OUT DRAWER
+══════════════════════════════════════════ -->
+<div class="radar-overlay" id="radar-overlay"></div>
+<aside class="radar-drawer" id="radar-drawer" aria-label="Conflict Radar Panel">
+  <div class="radar-drawer-header">
+    <div>
+      <h2 class="radar-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        Conflict Radar
+      </h2>
+      <p class="radar-subtitle">Live hard-constraint violations &amp; alternatives</p>
+    </div>
+    <button class="radar-close-btn" id="radar-close-btn" aria-label="Close conflict radar">&times;</button>
+  </div>
+
+  <div class="radar-scan-bar">
+    <div class="radar-scan-fill" id="radar-scan-fill"></div>
+  </div>
+
+  <div class="radar-category-nav" id="radar-category-nav">
+    <button class="radar-cat-btn active" data-category="ALL">All (<span id="cat-count-all">0</span>)</button>
+    <button class="radar-cat-btn" data-category="ROOM">Room (<span id="cat-count-room">0</span>)</button>
+    <button class="radar-cat-btn" data-category="FACULTY">Faculty (<span id="cat-count-faculty">0</span>)</button>
+    <button class="radar-cat-btn" data-category="SECTION">Section (<span id="cat-count-section">0</span>)</button>
+  </div>
+
+  <div class="radar-body" id="radar-body">
+    <div class="radar-empty" id="radar-empty">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      <p>No conflicts detected</p>
+      <span>All schedules pass institutional hard constraints</span>
+    </div>
+    <div id="radar-conflict-list" class="radar-conflict-list" style="display:none;"></div>
+  </div>
+
+  <div class="radar-footer">
+    <button class="btn btn-secondary btn-sm" id="radar-refresh-btn">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+      Re-scan
+    </button>
+    <span class="radar-last-scan" id="radar-last-scan">Not yet scanned</span>
+  </div>
+</aside>
+{% endif %}
+
+
+{% if session.get('role') in ['CHAIR', 'ADMIN', 'PROG_CHA'] and active_role in ['CHAIR', 'ADMIN', 'PROG_CHA'] %}
+<!-- ══════════════════════════════════════════
+     ADD / EDIT SCHEDULE MODAL
+══════════════════════════════════════════ -->
+<div class="sched-modal-backdrop" id="sched-modal-backdrop">
+  <div class="sched-modal" id="sched-modal" role="dialog" aria-modal="true" aria-labelledby="sched-modal-title">
+    <div class="sched-modal-header">
+      <h3 id="sched-modal-title">Add New Schedule</h3>
+      <button class="sched-modal-close" id="sched-modal-close" aria-label="Close">&times;</button>
+    </div>
+
+    <form id="sched-modal-form" novalidate>
+      <input type="hidden" id="sched-edit-id" value="">
+
+      <!-- Pre-flight conflict status banner -->
+      <div id="preflight-banner" class="preflight-banner" style="display:none;"></div>
+
+      <!-- Slot Conflict Radar Action Banner -->
+      <div id="modal-conflict-banner" class="preflight-banner preflight-conflict" style="display:none; margin: 0 20px 14px 20px; align-items: center; justify-content: space-between;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span>⚠️ <strong>Active Conflict Detected</strong> on this class slot.</span>
+        </div>
+        <button type="button" id="btn-modal-open-radar" class="btn btn-sm btn-outline" style="background:#fff; font-size:11.5px; border-color:#DC2626; color:#DC2626;">
+          Radar / Fix ▾
+        </button>
+      </div>
+
+      <div class="sched-modal-body">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="m-subject">Subject <span class="req">*</span></label>
+            <select id="m-subject" name="subject_id" required>
+              <option value="">Select subject…</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="m-section">Section <span class="req">*</span></label>
+            <select id="m-section" name="section_id" required>
+              <option value="">Select section…</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Laboratory Subgroup row (visible when LAB subject selected) -->
+        <div class="form-row" id="m-subgroup-row" style="display:none;">
+          <div class="form-group" style="width: 100%;">
+            <label for="m-subgroup">🧪 Laboratory Grouping (G1 / G2)</label>
+            <select id="m-subgroup" name="sub_group">
+              <option value="">Entire Section (Full Cohort)</option>
+              <option value="G1">Group 1 (G1 Only)</option>
+              <option value="G2">Group 2 (G2 Only)</option>
+              <option value="BOTH">Split into G1 &amp; G2 (Create 2 Distinct Schedules)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="m-faculty">Faculty <span style="font-size:11px; color:var(--text-muted);">(Optional / TBA)</span></label>
+            <select id="m-faculty" name="faculty_id">
+              <option value="">TBA — No Professor Assigned</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="m-room">Room <span class="req">*</span></label>
+            <select id="m-room" name="room_id" required>
+              <option value="">Select room…</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="m-day">Day <span class="req">*</span></label>
+            <select id="m-day" name="day_of_week" required>
+              <option value="">Select day…</option>
+              <option value="MON">Monday</option>
+              <option value="TUE">Tuesday</option>
+              <option value="WED">Wednesday</option>
+              <option value="THU">Thursday</option>
+              <option value="FRI">Friday</option>
+              <option value="SAT">Saturday</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="m-status">Status</label>
+            <select id="m-status" name="status">
+              <option value="DRAFT">Draft</option>
+              <option value="PUBLISHED">Published</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="m-start">Start Time <span class="req">*</span></label>
+            <select id="m-start" name="start_time" required>
+              <option value="">Select time…</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="m-end">End Time <span class="req">*</span></label>
+            <select id="m-end" name="end_time" required>
+              <option value="">Select time…</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Suggestions panel (1-Click Apply Alternative) -->
+        <div id="suggestions-panel" class="suggestions-panel" style="display:none;">
+          <div class="suggestions-header">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            Conflict detected · suggested alternatives:
+          </div>
+          <div id="suggestions-list" class="suggestions-list"></div>
+        </div>
+      </div>
+
+      <div class="sched-modal-footer">
+        <button type="button" class="btn btn-danger" id="sched-modal-delete" style="margin-right: auto; display:none; background:#DC2626; color:#fff; border:none; padding:8px 14px; border-radius:8px; font-weight:600; cursor:pointer;">
+          Delete Class
+        </button>
+        <button type="button" class="btn btn-secondary" id="sched-modal-cancel">Cancel</button>
+        <button type="button" class="btn btn-outline" id="btn-preflight">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><path d="M21 12c0-4.97-4.03-9-9-9S3 7.03 3 12s4.03 9 9 9 9-4.03 9-9z"/></svg>
+          Check Conflicts
+        </button>
+        <button type="submit" class="btn btn-primary" id="sched-modal-save">Save Schedule</button>
+      </div>
+    </form>
+  </div>
+</div>
+<!-- Overlapping Classes Popover Modal -->
+<div class="sched-modal-backdrop" id="modal-more-classes-backdrop" style="display:none; z-index: 1000;">
+  <div class="sched-modal" style="max-width: 480px;">
+    <div class="sched-modal-header">
+      <h3 id="modal-more-title">Concurrent Classes</h3>
+      <button class="sched-modal-close" id="modal-more-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="sched-modal-body">
+      <p id="modal-more-subtitle" style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;"></p>
+      <div id="modal-more-list" style="display: flex; flex-direction: column; gap: 8px; max-height: 380px; overflow-y: auto;"></div>
+    </div>
+    <div class="sched-modal-footer">
+      <button type="button" class="btn btn-secondary" id="modal-more-ok">Close</button>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Faculty Availability & Blackout Windows Modal -->
+<div class="sched-modal-backdrop" id="modal-faculty-avail-backdrop" style="display:none; z-index: 1000;">
+  <div class="sched-modal" style="max-width: 520px;">
+    <div class="sched-modal-header">
+      <h3 id="modal-fac-avail-title">Faculty Availability &amp; Blackout Windows</h3>
+      <button class="sched-modal-close" id="modal-fac-avail-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="sched-modal-body">
+      <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px;">
+        Define blackout time windows when you are unavailable for classroom instruction.
+      </p>
+      <div id="fac-avail-list" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; max-height: 200px; overflow-y: auto;">
+        <!-- Injected dynamically -->
+      </div>
+      <div style="background: var(--bg-hover, #F9FAFB); border: 1px solid var(--border-light); border-radius: 8px; padding: 12px;">
+        <h4 style="font-size: 13px; margin: 0 0 8px 0; color: var(--bulsu-maroon);">+ Add Blackout Window</h4>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
+          <div>
+            <label style="font-size: 11px; font-weight: 600;">Day</label>
+            <select id="new-avail-day" class="form-select" style="font-size: 12px; width: 100%;">
+              <option value="MON">Monday</option>
+              <option value="TUE">Tuesday</option>
+              <option value="WED">Wednesday</option>
+              <option value="THU">Thursday</option>
+              <option value="FRI">Friday</option>
+              <option value="SAT">Saturday</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size: 11px; font-weight: 600;">Start</label>
+            <select id="new-avail-start" class="form-select" style="font-size: 12px; width: 100%;">
+              <option value="08:00">08:00 AM</option>
+              <option value="09:00">09:00 AM</option>
+              <option value="10:00">10:00 AM</option>
+              <option value="11:00">11:00 AM</option>
+              <option value="13:00">01:00 PM</option>
+              <option value="14:00">02:00 PM</option>
+              <option value="15:00">03:00 PM</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size: 11px; font-weight: 600;">End</label>
+            <select id="new-avail-end" class="form-select" style="font-size: 12px; width: 100%;">
+              <option value="12:00">12:00 PM</option>
+              <option value="13:00">01:00 PM</option>
+              <option value="14:00">02:00 PM</option>
+              <option value="16:00">04:00 PM</option>
+              <option value="17:00">05:00 PM</option>
+              <option value="18:00">06:00 PM</option>
+            </select>
+          </div>
+        </div>
+        <button type="button" id="btn-save-new-avail" class="btn btn-sm btn-primary" style="margin-top: 10px; width: 100%;">
+          Add Blackout Window
+        </button>
+      </div>
+    </div>
+    <div class="sched-modal-footer">
+      <button type="button" class="btn btn-secondary" id="modal-fac-avail-done">Done</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/schedules_view.js') }}"></script>
+{% endblock %}

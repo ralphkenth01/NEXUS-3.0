@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}NEXUS • COE SYNC | BulSU College of Engineering{% endblock %}</title>
+
+  <!-- Centralized Design Tokens & Modular Stylesheet (Zero CDN Dependencies) -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+  <script>
+    window.normalizeRole = function (role) {
+      const up = String(role || "").trim().toUpperCase();
+      if (up === "PROG_CHA" || up === "CHAIR") return "CHAIR";
+      if (up === "FCLTY_DEPT" || up === "FACULTY") return "FACULTY";
+      if (up === "STDN_MYR" || up === "STUDENT") return "STUDENT";
+      return up;
+    };
+    window.AUTHENTIC_USER_ROLE = window.normalizeRole("{{ session.get('role') or '' }}");
+    window.CURRENT_ROLE = window.normalizeRole("{{ active_role or session.get('active_role') or session.get('role') or '' }}");
+    window.CURRENT_PROGRAM = "{{ session.get('active_program') or session.get('program') or '' }}";
+    window.CURRENT_REF_ID = "{{ session.get('active_reference_id') or session.get('reference_id') or '' }}";
+  </script>
+  {% block extra_css %}{% endblock %}
+</head>
+<body class="{% if session.get('role') == 'STUDENT' or active_role == 'STUDENT' %}student-portal non-student-omitted{% endif %}">
+
+  <div class="app-shell">
+    <!-- Persistent Sidebar (BulSU COE Maroon Gradient) -->
+    <aside class="sidebar" aria-label="Main Navigation">
+      <div class="sidebar-brand">
+        <div class="brand-badge-box">
+          <span>NX</span>
+        </div>
+        <div class="brand-titles">
+          <div class="sidebar-title">NEXUS</div>
+          <div class="sidebar-subtitle">College of Engineering</div>
+        </div>
+      </div>
+
+      <div class="sidebar-section-label">WORKSPACE</div>
+
+      <nav class="sidebar-nav">
+        <!-- Dashboard link: Visible to Dean, Chair, Admin, and Student (strictly hidden for Faculty) -->
+        {% if session.get('role') not in ['FACULTY', 'FCLTY_DEPT'] and active_role not in ['FACULTY', 'FCLTY_DEPT'] %}
+        <a href="/" class="sidebar-link {% if active_page == 'dashboard' %}active{% endif %}" id="nav-dashboard">
+          <svg class="sidebar-icon" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg>
+          <span>Dashboard</span>
+        </a>
+        {% endif %}
+        <a href="/schedules" class="sidebar-link {% if active_page == 'schedules' %}active{% endif %}" id="nav-schedules">
+          <svg class="sidebar-icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          <span>Schedules</span>
+        </a>
+        {% if (session.get('role') in ['CHAIR', 'ADMIN', 'PROG_CHA'] and active_role in ['CHAIR', 'ADMIN', 'PROG_CHA']) %}
+        <a href="/schedules/create" class="sidebar-link admin-only non-student {% if active_page == 'create_schedule' %}active{% endif %}" id="nav-create-schedule">
+          <svg class="sidebar-icon" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          <span>+ Create Schedule</span>
+        </a>
+        {% endif %}
+
+        <!-- Rooms (Available to CHAIR, ADMIN, FACULTY, DEAN, and STUDENT) -->
+        <a href="/rooms" class="sidebar-link {% if active_page == 'manage' and request.args.get('tab', 'rooms') == 'rooms' %}active{% endif %}" id="nav-rooms">
+          <svg class="sidebar-icon" viewBox="0 0 24 24"><path d="M3 21h18M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16"/><path d="M9 9h1M9 13h1M9 17h1M14 9h1M14 13h1M14 17h1"/></svg>
+          <span>Rooms</span>
+        </a>
+
+        <!-- My Profile (Faculty only) -->
+        {% if session.get('role') in ['FACULTY', 'FCLTY_DEPT'] or active_role in ['FACULTY', 'FCLTY_DEPT'] %}
+        <a href="/manage?tab=faculty&view=detailed&id={{ session.get('active_reference_id') or session.get('reference_id') or 109 }}" class="sidebar-link {% if active_page == 'manage' and request.args.get('tab') == 'faculty' and request.args.get('view') == 'detailed' %}active{% endif %}" id="nav-my-profile">
+          <svg class="sidebar-icon" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <span>My Profile</span>
+        </a>
+        {% endif %}
+
+        {% if session.get('role') not in ['STUDENT', 'STDN_MYR'] and active_role not in ['STUDENT', 'STDN_MYR'] %}
+          <!-- Faculty Directory (Admin, Chair, Dean) -->
+          {% if session.get('role') not in ['FACULTY', 'FCLTY_DEPT'] and active_role not in ['FACULTY', 'FCLTY_DEPT'] %}
+          <a href="/manage?tab=faculty" class="sidebar-link non-student {% if active_page == 'manage' and request.args.get('tab') == 'faculty' and request.args.get('view') != 'detailed' %}active{% endif %}" id="nav-faculty">
+            <svg class="sidebar-icon" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <span>Faculty</span>
+          </a>
+          {% endif %}
+
+          <!-- Sections (Admin, Chair, Dean, Faculty) -->
+          <a href="/manage?tab=sections" class="sidebar-link non-student {% if active_page == 'manage' and request.args.get('tab') == 'sections' %}active{% endif %}" id="nav-sections">
+            <svg class="sidebar-icon" viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+            <span>Sections</span>
+          </a>
+
+          <!-- Subjects (Admin, Chair, Faculty - Dean CANNOT see subjects per NEXUS 2.0 Part 2) -->
+          {% if session.get('role') != 'DEAN' and active_role != 'DEAN' %}
+          <a href="/manage?tab=subjects" class="sidebar-link non-student {% if active_page == 'manage' and request.args.get('tab') == 'subjects' %}active{% endif %}" id="nav-subjects">
+            <svg class="sidebar-icon" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+            <span>Subjects</span>
+          </a>
+          {% endif %}
+
+          <!-- Conflict Radar (Chair, Admin only) -->
+          {% if session.get('role') in ['CHAIR', 'ADMIN', 'PROG_CHA'] and active_role in ['CHAIR', 'ADMIN', 'PROG_CHA'] %}
+          <a href="/schedules?radar=open" class="sidebar-link non-student admin-only" id="nav-conflict-radar">
+            <svg class="sidebar-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 10 10"/><line x1="12" y1="12" x2="19" y2="5"/></svg>
+            <span>Conflict Radar</span>
+          </a>
+          {% endif %}
+
+          <!-- Analytics / Reports (Admin, Chair, Dean) -->
+          {% if session.get('role') in ['CHAIR', 'ADMIN', 'DEAN', 'PROG_CHA'] and active_role in ['CHAIR', 'ADMIN', 'DEAN', 'PROG_CHA'] %}
+          <a href="/reports" class="sidebar-link non-student {% if active_page == 'reports' %}active{% endif %}" id="nav-reports">
+            <svg class="sidebar-icon" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            <span>Analytics / Reports</span>
+          </a>
+          {% endif %}
+        {% endif %}
+      </nav>
+
+      <div class="sidebar-divider"></div>
+
+      <div class="sidebar-footer">
+        <a href="/settings" class="sidebar-link {% if active_page == 'settings' %}active{% endif %}" id="btn-sidebar-settings">
+          <svg class="sidebar-icon" viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+          <span>Settings</span>
+        </a>
+        <a href="/logout" class="sidebar-link" id="btn-sidebar-logout">
+          <svg class="sidebar-icon" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          <span>Logout</span>
+        </a>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <div class="main-wrapper">
+      <!-- Top Bar with Breadcrumbs, Alert Pill, and Profile Role Impersonator -->
+      <header class="top-bar">
+        <div class="top-bar-left">
+          <div class="workspace-header-text">
+            <div class="workspace-breadcrumb">Workspace / <span id="breadcrumb-page-name">{% block breadcrumb %}{{ active_page|title }}{% endblock %}</span></div>
+            <h1 class="workspace-title" id="page-main-title">{% block page_title %}{{ active_page|title }}{% endblock %}</h1>
+          </div>
+
+          <div id="health-badge" class="health-badge" style="display: none;">
+            <span class="health-pulse"></span>
+            <span id="health-text">Connecting...</span>
+          </div>
+
+          {% if session.get('role') != 'STUDENT' and active_role != 'STUDENT' %}
+          <!-- Program Chair Active Status Widget -->
+          <div id="chair-status-widget" class="chair-status-container" style="display:none;">
+            {% if session.get('role') in ['CHAIR', 'ADMIN'] and active_role in ['CHAIR', 'ADMIN'] %}
+            <button id="chair-status-toggle-btn" class="chair-status-toggle admin-only" title="Toggle Program Chair active availability status">
+              <span class="status-dot active" id="chair-status-dot"></span>
+              <span id="chair-status-label">Chair: Active</span>
+            </button>
+            {% endif %}
+            <div id="faculty-chair-badge" class="chair-status-pill" style="display:none;" title="Current Program Chair Availability Status">
+              <span class="status-dot active" id="fac-status-dot"></span>
+              <span>Chair Status: <strong id="fac-status-val">Active</strong></span>
+            </div>
+          </div>
+          {% endif %}
+        </div>
+
+        <div class="top-bar-right">
+          <!-- Synchronized Academic Term Selector -->
+          <div class="global-term-wrap" style="display: flex; align-items: center; margin-right: 6px;">
+            <select id="global-term-select" class="filter-pill-select" style="background: rgba(255,255,255,0.92); border: 1px solid var(--border-medium); border-radius: 9999px; font-size: 11.5px; font-weight: 600; padding: 4px 10px; color: var(--bulsu-maroon); cursor: pointer;" title="Synchronized Academic Term">
+              <option value="1" selected>1st Sem AY 2026–2027</option>
+              <option value="2">2nd Sem AY 2026–2027</option>
+            </select>
+          </div>
+
+          <!-- Alert Pill (#conflict-alert-pill) -->
+          <button id="conflict-alert-pill" class="alert-pill" title="Active Conflicts & Alerts">
+            <span class="alert-dot"></span>
+            <span id="conflict-alert-text">1 Alert</span>
+          </button>
+
+          <!-- Notification Bell / Requests Inbox Pill (#requests-inbox-pill) -->
+          <button id="requests-inbox-pill" class="alert-pill requests-pill" title="Unified Requests & Approvals Inbox" style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
+            <span class="alert-dot" id="requests-dot" style="background:#3B82F6;"></span>
+            <span id="requests-inbox-text">🔔 0 Requests</span>
+          </button>
+
+          <!-- User Profile Pill (Authenticated MySQL Session) -->
+          <div class="role-profile-pill" id="user-profile-pill" title="User Profile">
+            <div class="role-profile-info">
+              <div class="role-profile-name" id="profile-display-name">
+                {{ session.get('username') or 'User' }}
+              </div>
+              <div class="role-profile-subtitle" id="profile-display-role">
+                {% if active_role == 'DEAN' %}College Dean{% elif active_role == 'ADMIN' %}Administrator{% elif active_role in ['FACULTY', 'FCLTY_DEPT'] %}Faculty Member{% elif active_role in ['STUDENT', 'STDN_MYR'] %}Student ({{ session.get('program') or 'MEE' }}){% else %}Program Chair ({{ session.get('active_program') or session.get('program') or 'MEE' }}){% endif %}
+              </div>
+            </div>
+            <div class="role-profile-avatar {% if active_role == 'DEAN' %}avatar-dean{% elif active_role == 'ADMIN' %}avatar-admin{% elif active_role in ['FACULTY', 'FCLTY_DEPT'] %}avatar-faculty{% elif active_role in ['STUDENT', 'STDN_MYR'] %}avatar-student{% else %}avatar-chair{% endif %}" id="profile-avatar-circle">
+              {% if active_role == 'DEAN' %}DN{% elif active_role == 'ADMIN' %}AD{% elif active_role in ['FACULTY', 'FCLTY_DEPT'] %}FC{% elif active_role in ['STUDENT', 'STDN_MYR'] %}ST{% else %}CH{% endif %}
+            </div>
+
+            <!-- User Account Menu -->
+            <div class="role-dropdown-menu" id="role-dropdown-menu">
+              <div class="role-dropdown-header">Active Account:</div>
+              <div style="padding: 10px 14px; font-size: 12px; color: var(--text-secondary); border-bottom: 1px solid var(--border-light);">
+                <div style="font-weight: 700; color: var(--text-dark); font-size: 13px;">{{ session.get('username') }}</div>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 3px;">
+                  Role: <strong>{{ session.get('role') }}</strong>
+                  {% if session.get('program') %}&bull; Dept: <strong>{{ session.get('program') }}</strong>{% endif %}
+                </div>
+              </div>
+              <a href="/settings" class="role-dropdown-item" style="color: var(--bulsu-maroon); text-decoration: none;">
+                <span>⚙️ Account Settings</span>
+              </a>
+              <a href="/logout" class="role-dropdown-item" style="color: #DC2626; text-decoration: none;">
+                <span>🚪 Sign Out</span>
+              </a>
+            </div>
+          </div>
+
+          <!-- Hidden elements for existing tests and functions -->
+          {% if session.get('role') in ['CHAIR', 'ADMIN'] and active_role in ['CHAIR', 'ADMIN'] %}
+          <div class="view-as-container" id="view-as-container" style="display:none;" title="Legacy Impersonator">
+            <span class="view-as-label">View As:</span>
+            <select id="view-as-select" class="view-as-select">
+              <option value="CHAIR" {% if active_role == 'CHAIR' %}selected{% endif %}>Program Chair</option>
+              <option value="FACULTY" {% if active_role == 'FACULTY' %}selected{% endif %}>Faculty (Prof. Robles)</option>
+              <option value="STUDENT" {% if active_role == 'STUDENT' %}selected{% endif %}>Student (BSMEE-1A)</option>
+            </select>
+          </div>
+          {% endif %}
+
+          <button id="btn-header-reschedules" class="btn btn-secondary btn-sm" title="Student Reschedule Requests Pipeline" style="display:none;">
+            <span>📋 Reschedules</span>
+            <span id="reschedule-count-badge" class="badge-count" style="display:none;">0</span>
+          </button>
+
+          {% if session.get('role') in ['CHAIR', 'ADMIN'] and active_role in ['CHAIR', 'ADMIN'] %}
+          <button id="global-seed-btn" class="btn btn-secondary btn-sm admin-only" title="Wipe & Reset baseline mock data" style="display:none;">
+            Reset DB
+          </button>
+          {% endif %}
+
+          <button id="btn-user-credentials" class="btn btn-secondary btn-sm" style="display:none;">
+            <span>🔑 Credentials</span>
+          </button>
+          <a href="/logout" id="btn-header-logout" class="btn btn-secondary btn-sm" style="display:none;">
+            <span>Sign Out</span>
+          </a>
+        </div>
+      </header>
+
+      <!-- Page Content Block -->
+      <main class="page-container">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+
+  <!-- Reusable Modal Container (Injected by manage.js and schedules.js) -->
+  <div id="manage-modal-backdrop" class="modal-backdrop">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="modal-title" class="modal-title">Action Dialog</h3>
+        <button id="modal-close-btn" class="modal-close-btn" type="button" aria-label="Close dialog">&times;</button>
+      </div>
+      <form id="manage-modal-form">
+        <div class="modal-body" id="modal-fields-container">
+          <!-- Dynamic form inputs injected here -->
+        </div>
+        <div class="modal-footer">
+          <button type="button" id="modal-cancel-btn" class="btn btn-secondary">Cancel</button>
+          <button type="submit" id="modal-save-btn" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 2-Tier Reschedule Request & Governance Modal Container -->
+  <div id="reschedule-modal-backdrop" class="modal-backdrop">
+    <div class="modal-dialog" style="max-width: 740px;">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title" id="reschedule-modal-title">Unified Requests &amp; Approvals</h3>
+          <p style="font-size: 12px; color: var(--text-muted); margin: 2px 0 0 0;">
+            NEXUS 2.0 Governance: Inter-Department Approvals, Room Bookings &amp; Class Reschedules
+          </p>
+        </div>
+        <button id="reschedule-modal-close-btn" class="modal-close-btn" type="button" aria-label="Close dialog">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 16px 20px;">
+        <!-- Top Unified Tabs Bar -->
+        <div style="display: flex; gap: 8px; border-bottom: 2px solid var(--border-light); padding-bottom: 10px; margin-bottom: 14px; flex-wrap: wrap;">
+          <button id="inbox-tab-interdept" class="btn btn-sm btn-primary active" style="font-weight: 700;">
+            🏢 Inter-Department Approvals (<span id="count-badge-interdept">0</span>)
+          </button>
+          <button id="inbox-tab-reschedules" class="btn btn-sm btn-secondary" style="font-weight: 700;">
+            📋 Reschedules &amp; Room Bookings (<span id="count-badge-resched">0</span>)
+          </button>
+          <button id="reschedule-tab-new" class="btn btn-sm btn-primary" style="display:none; margin-left: auto;">+ Request Reschedule</button>
+        </div>
+
+        <!-- Sub-filter bar for Reschedules (Pending vs All) -->
+        <div id="reschedule-subfilter-bar" style="display: none; gap: 8px; margin-bottom: 12px;">
+          <button id="reschedule-tab-pending" class="btn btn-xs btn-primary active">Pending Action</button>
+          <button id="reschedule-tab-all" class="btn btn-xs btn-secondary">All &amp; Status Tracker</button>
+        </div>
+
+        <!-- Inter-Department Requests Container -->
+        <div id="interdept-list-container" class="reschedule-list" style="display: flex; flex-direction: column; gap: 10px;">
+          <div style="text-align: center; color: var(--text-muted); padding: 24px;">Loading inter-department requests...</div>
+        </div>
+
+        <!-- Class Reschedules & Rooms List Container -->
+        <div id="reschedule-list-container" class="reschedule-list" style="display: none; flex-direction: column; gap: 10px;">
+          <div style="text-align: center; color: var(--text-muted); padding: 24px;">Loading requests...</div>
+        </div>
+
+        <!-- New Request Form Container (Visible when + Request Reschedule is clicked) -->
+        <form id="reschedule-new-form" style="display: none; flex-direction: column; gap: 12px;">
+          <div style="font-size: 12px; color: #92400E; background: #FEF3C7; border: 1px solid #FCD34D; border-radius: 6px; padding: 8px 12px;">
+            ⏳ <strong>Notice:</strong> Reschedule requests automatically expire and are deleted if not answered within 1 week (7 days).
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="resched-select-schedule">Select Class to Reschedule</label>
+            <select id="resched-select-schedule" class="form-input" required>
+              <option value="">-- Choose scheduled class --</option>
+            </select>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+            <div class="form-group">
+              <label class="form-label" for="resched-day">Proposed Day</label>
+              <select id="resched-day" class="form-input" required>
+                <option value="MON">Monday</option>
+                <option value="TUE">Tuesday</option>
+                <option value="WED">Wednesday</option>
+                <option value="THU">Thursday</option>
+                <option value="FRI">Friday</option>
+                <option value="SAT">Saturday</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="resched-start">Start Time</label>
+              <input type="time" id="resched-start" class="form-input" required value="13:00">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="resched-end">End Time</label>
+              <input type="time" id="resched-end" class="form-input" required value="14:30">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="resched-room">Optional Available Room</label>
+            <select id="resched-room" class="form-input">
+              <option value="">-- Keep Current Room or Auto-Assign --</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="resched-reason">Justification / Reason for Reschedule</label>
+            <textarea id="resched-reason" class="form-input" rows="3" placeholder="Provide clear educational reason (e.g., departmental exam conflict, student org assembly)..." required></textarea>
+          </div>
+
+          <div id="resched-feedback-banner" style="display:none; padding: 8px 12px; border-radius: var(--radius-xs); font-size: 12px;"></div>
+
+          <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px;">
+            <button type="button" id="btn-cancel-resched-form" class="btn btn-secondary">Back to List</button>
+            <button type="submit" id="btn-submit-resched-request" class="btn btn-primary">Submit Reschedule Request</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Credentials Management Modal Container -->
+  <div id="credentials-modal-backdrop" class="modal-backdrop">
+    <div class="modal-dialog" style="max-width: 460px;">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title">Credentials Management</h3>
+          <p style="font-size: 12px; color: var(--text-muted); margin: 2px 0 0 0;">
+            Update your Program Chair username and password
+          </p>
+        </div>
+        <button id="credentials-modal-close-btn" class="modal-close-btn" type="button" aria-label="Close dialog">&times;</button>
+      </div>
+      <form id="form-manage-credentials" style="padding: 16px 20px;">
+        <div id="credentials-feedback-banner" style="display:none; padding: 10px 14px; border-radius: var(--radius-xs); font-size: 13px; margin-bottom: 14px;"></div>
+
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label class="form-label" for="inp-modal-current-pw">Current Password *</label>
+          <input type="password" id="inp-modal-current-pw" class="form-input" required placeholder="Enter current password">
+        </div>
+
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label class="form-label" for="inp-modal-new-username">New Username *</label>
+          <input type="text" id="inp-modal-new-username" class="form-input" required value="{{ current_username or session.get('username') or 'chair_cpe' }}">
+        </div>
+
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label class="form-label" for="inp-modal-new-pw">New Password * (min. 6 chars)</label>
+          <input type="password" id="inp-modal-new-pw" class="form-input" required placeholder="At least 6 characters" minlength="6">
+        </div>
+
+        <div class="form-group" style="margin-bottom: 18px;">
+          <label class="form-label" for="inp-modal-confirm-pw">Confirm New Password *</label>
+          <input type="password" id="inp-modal-confirm-pw" class="form-input" required placeholder="Re-type new password" minlength="6">
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+          <button type="button" id="btn-cancel-credentials" class="btn btn-secondary">Cancel</button>
+          <button type="submit" id="btn-submit-credentials" class="btn btn-primary">Update Credentials</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Global Toast Notification Container -->
+  <div id="app-toast" class="toast-msg"></div>
+
+  <!-- Core Scripts (Zero CDN Dependencies) -->
+  <script src="{{ url_for('static', filename='js/api.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  {% block extra_js %}{% endblock %}
+</body>
+</html>
