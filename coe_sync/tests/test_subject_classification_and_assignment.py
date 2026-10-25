@@ -568,6 +568,52 @@ class TestSubjectClassificationAndAssignment(unittest.TestCase):
         et_m = s.end_time.hour * 60 + s.end_time.minute
         self.assertEqual(et_m - st_m, 180, "Default session duration must be 180 minutes (3 hours straight)")
 
+    def test_one_hour_subject_scheduled_as_indicated_one_hour(self):
+        """
+        Verify that a subject requiring 1 hour/week is scheduled as exactly 1 hour.
+        """
+        from services.scheduler import run_smart_scheduler
+
+        fac = Faculty(name="Engr. Grace Hopper", email="ghopper@bulsu.edu.ph", program="CPE", max_units=24)
+        sec = Section(name="CPE-4A", program="CPE", year_level=4)
+        sub_1h = Subject(
+            code="CPE 411",
+            title="Engineering Seminar & Ethics",
+            units=1,
+            hours_per_week=1,
+            subject_type="LECTURE",
+            program="CPE",
+            year_level=4,
+            semester=1,
+        )
+        rm = Room(room_code="COE-CPE-401", room_type="LECTURE", department="CPE", capacity=45, is_available=True)
+
+        db.session.add_all([fac, sec, sub_1h, rm])
+        db.session.commit()
+
+        fs = FacultySubject(faculty_id=fac.id, subject_id=sub_1h.id)
+        db.session.add(fs)
+        db.session.commit()
+
+        res = run_smart_scheduler(
+            {
+                "program": "CPE",
+                "year_level": "4",
+                "section_ids": [sec.id],
+                "room_ids": [rm.id],
+                "faculty_ids": [fac.id],
+                "semester": 1,
+            }
+        )
+        self.assertEqual(res["status"], "success")
+
+        scheds = Schedule.query.filter_by(section_id=sec.id, subject_id=sub_1h.id).all()
+        self.assertEqual(len(scheds), 1, "Expected 1 scheduled session for 1-hour subject")
+        s = scheds[0]
+        st_m = s.start_time.hour * 60 + s.start_time.minute
+        et_m = s.end_time.hour * 60 + s.end_time.minute
+        self.assertEqual(et_m - st_m, 60, "Session duration must be exactly 60 minutes (1 hour)")
+
 
 if __name__ == "__main__":
     unittest.main()

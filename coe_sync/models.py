@@ -1,5 +1,7 @@
 from datetime import datetime
+# pyrefly: ignore[missing-import]
 from flask_sqlalchemy import SQLAlchemy
+# pyrefly: ignore[missing-import]
 from werkzeug.security import generate_password_hash, check_password_hash
 
 # Initialize shared SQLAlchemy instance
@@ -574,8 +576,8 @@ class Schedule(db.Model):
         nullable=False,
     )
     split_preference = db.Column(
-        db.Enum("3_HOUR_BLOCK", "1.5_HOUR_SPLIT", name="sched_split_pref_enum"),
-        default="1.5_HOUR_SPLIT",
+        db.String(30),
+        default="3_HOUR_BLOCK",
         nullable=False,
     )
 

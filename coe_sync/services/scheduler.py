@@ -162,6 +162,30 @@ def run_smart_scheduler(config: Dict[str, Any], user_id: Optional[int] = None) -
         ("13:00", "16:00"),
         ("16:00", "19:00"),
     ]
+    block_1_hour_slots = [
+        ("07:00", "08:00"),
+        ("08:00", "09:00"),
+        ("09:00", "10:00"),
+        ("10:00", "11:00"),
+        ("11:00", "12:00"),
+        ("13:00", "14:00"),
+        ("14:00", "15:00"),
+        ("15:00", "16:00"),
+        ("16:00", "17:00"),
+        ("17:00", "18:00"),
+        ("18:00", "19:00"),
+    ]
+    block_2_hour_slots = [
+        ("07:00", "09:00"),
+        ("08:00", "10:00"),
+        ("09:00", "11:00"),
+        ("10:00", "12:00"),
+        ("13:00", "15:00"),
+        ("14:00", "16:00"),
+        ("15:00", "17:00"),
+        ("16:00", "18:00"),
+        ("17:00", "19:00"),
+    ]
     block_3_hour_slots = [
         ("07:00", "10:00"),
         ("08:00", "11:00"),
@@ -451,16 +475,23 @@ def run_smart_scheduler(config: Dict[str, Any], user_id: Optional[int] = None) -
                                     break
 
             if not slot_placed:
-                # Single block placement (for LABs, 3_HOUR_BLOCK, 3-hour straight default, or fallback)
-                is_3h = (
-                    getattr(sub, "split_preference", None) == "3_HOUR_BLOCK"
-                    or (sub.units or 0) >= 3
-                    or (sub.hours_per_week or 0) >= 3
-                )
-                slots = lab_slots if sub.subject_type == "LAB" else (
-                    block_3_hour_slots if is_3h else lecture_slots
-                )
-                split_val = getattr(sub, "split_preference", "3_HOUR_BLOCK") or "3_HOUR_BLOCK"
+                # Single block placement: schedule according to indicated hour/week (e.g. 1 hr, 2 hrs, or 3 hrs straight)
+                target_hours = sub.hours_per_week or sub.units or 3
+                if sub.subject_type == "LAB":
+                    slots = lab_slots
+                    split_val = getattr(sub, "split_preference", "3_HOUR_BLOCK") or "3_HOUR_BLOCK"
+                elif target_hours == 1:
+                    slots = block_1_hour_slots
+                    split_val = "1_HOUR_BLOCK"
+                elif target_hours == 2:
+                    slots = block_2_hour_slots
+                    split_val = "2_HOUR_BLOCK"
+                elif target_hours >= 3:
+                    slots = block_3_hour_slots
+                    split_val = "3_HOUR_BLOCK"
+                else:
+                    slots = lecture_slots
+                    split_val = getattr(sub, "split_preference", "3_HOUR_BLOCK") or "3_HOUR_BLOCK"
 
                 days_to_try = list(candidate_days)
                 if minimize_gaps:
