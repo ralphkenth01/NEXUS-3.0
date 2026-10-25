@@ -94,6 +94,16 @@ def create_app(config_name=None):
     with app.app_context():
         try:
             db.create_all()
+            # If deployed to a fresh environment (e.g. Render/Railway/Docker/Heroku),
+            # automatically seed initial master data and user accounts if database is empty
+            if User.query.count() == 0:
+                print("[COE SYNC 2026] Fresh deployment detected: database is empty. Auto-seeding initial data...", flush=True)
+                try:
+                    from seed_data import seed_database
+                    seed_database(app)
+                    print("[COE SYNC 2026] Auto-seeding completed successfully.", flush=True)
+                except Exception as seed_err:
+                    print(f"[COE SYNC 2026] Auto-seeding warning: {seed_err}", flush=True)
         except Exception:
             pass
 
