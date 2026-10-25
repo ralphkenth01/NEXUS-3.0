@@ -344,12 +344,8 @@ def run_smart_scheduler(config: Dict[str, Any], user_id: Optional[int] = None) -
             elif raw_mode in ("split", "2x 1.5-hr split", "1.5_hour_split"):
                 is_split_lecture = (sub.subject_type == "LECTURE" and (sub.units == 3 or sub.hours_per_week == 3))
             else:
-                # Default behavior: 3 hours straight unless specifically configured to split
-                if (
-                    sub_split_pref in ("SPLIT", "1.5_HOUR_SPLIT")
-                    or sub_session_pref == "SPLIT"
-                    or fac_pref == "SPLIT"
-                ):
+                # Rule: Do NOT split the 3hrs unless it is specifically marked on the SUBJECT to be split into half
+                if sub_split_pref in ("SPLIT", "1.5_HOUR_SPLIT") or sub_session_pref == "SPLIT":
                     is_split_lecture = (sub.subject_type == "LECTURE" and (sub.units == 3 or sub.hours_per_week == 3))
                 else:
                     is_split_lecture = False
