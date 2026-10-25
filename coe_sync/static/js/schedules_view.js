@@ -38,6 +38,8 @@ let _masterData      = {
   rooms: [],
   subjects: [],
 };
+let _autoAdjustEnabled   = true; // Chair toggle: automatically adjust colliding slots
+let _lastMovePreviousState = null; // Stored previous positions for Undo
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Subject Category Mapping (6-Category System)
@@ -150,6 +152,31 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
   if (statParam) {
     setSelectVal("filter-status", statParam);
+  }
+
+  // Wire Auto-Adjust Toggle
+  const autoAdjustCb = document.getElementById("toggle-auto-adjust");
+  if (autoAdjustCb) {
+    const savedAutoAdjust = localStorage.getItem("coe_sync_auto_adjust");
+    if (savedAutoAdjust !== null) {
+      _autoAdjustEnabled = savedAutoAdjust === "true";
+      autoAdjustCb.checked = _autoAdjustEnabled;
+    }
+    autoAdjustCb.addEventListener("change", (e) => {
+      _autoAdjustEnabled = e.target.checked;
+      localStorage.setItem("coe_sync_auto_adjust", _autoAdjustEnabled);
+      showToast(_autoAdjustEnabled ? "⚡ Auto-Adjust Enabled: Overlapping classes will shift automatically." : "Auto-Adjust Disabled: Moves will retain colliding slots without shifting.", "info");
+    });
+  }
+
+  // Wire Top Undo Button
+  const topUndoBtn = document.getElementById("btn-undo-schedule-move");
+  if (topUndoBtn) {
+    topUndoBtn.addEventListener("click", () => {
+      if (typeof window.triggerUndoLastMove === "function") {
+        window.triggerUndoLastMove();
+      }
+    });
   }
 
   await fetchAndRender();
@@ -2387,12 +2414,19 @@ async function executeScheduleMove(scheduleId, targetDay, targetStartTime, targe
       target_day: targetDay,
       target_start_time: targetStartTime,
       target_schedule_id: targetScheduleId || null,
+      auto_adjust: _autoAdjustEnabled,
     };
     const res = await API.post(`/api/schedules/${scheduleId}/drag-move`, payload);
 
     if (res && res.status === "success") {
       await fetchAndRender();
       await fetchLiveUtilization();
+
+      // Store previous state for Undo
+      if (res.previous_state && res.previous_state.length > 0) {
+        _lastMovePreviousState = res.previous_state;
+        updateUndoButtonVisibility(true);
+      }
 
       const hasDisplaced = res.displaced_adjustments && res.displaced_adjustments.length > 0;
       const hasWarnings = res.warnings && res.warnings.length > 0;
@@ -2411,6 +2445,43 @@ async function executeScheduleMove(scheduleId, targetDay, targetStartTime, targe
   }
 }
 
+function updateUndoButtonVisibility(show) {
+  const topUndoBtn = document.getElementById("btn-undo-schedule-move");
+  const bannerUndoBtn = document.getElementById("btn-banner-undo-move");
+  if (topUndoBtn) {
+    topUndoBtn.style.display = show ? "inline-flex" : "none";
+  }
+  if (bannerUndoBtn) {
+    bannerUndoBtn.style.display = show ? "inline-block" : "none";
+  }
+}
+
+window.triggerUndoLastMove = async function() {
+  if (!_lastMovePreviousState || _lastMovePreviousState.length === 0) {
+    showToast("No recent move adjustment to undo.", "info");
+    return;
+  }
+  try {
+    const payload = {
+      revert_items: _lastMovePreviousState,
+    };
+    const res = await API.post("/api/schedules/batch-revert", payload);
+    if (res && res.status === "success") {
+      showToast(res.message || "Adjustment successfully reverted!", "success");
+      _lastMovePreviousState = null;
+      updateUndoButtonVisibility(false);
+      dismissRescheduleWarning();
+      await fetchAndRender();
+      await fetchLiveUtilization();
+    } else {
+      showToast(res?.message || "Could not undo adjustment.", "error");
+    }
+  } catch (err) {
+    console.error("Undo error:", err);
+    showToast(err.message || "Error undoing schedule adjustment.", "error");
+  }
+};
+
 function showRescheduleWarning(titleMsg, warnings = [], displaced = []) {
   const banner = document.getElementById("reschedule-warning-banner");
   const titleEl = document.getElementById("reschedule-warning-title");
@@ -2423,7 +2494,7 @@ function showRescheduleWarning(titleMsg, warnings = [], displaced = []) {
 
   let bodyHtml = "";
   if (displaced && displaced.length > 0) {
-    bodyHtml += `<div style="margin-bottom: 6px;"><strong>Auto-Adjusted Course Slots:</strong><ul style="margin: 4px 0 0 18px; padding: 0;">`;
+    bodyHtml += `<div style="margin-bottom: 6px;"><strong>${_autoAdjustEnabled ? "Auto-Adjusted Course Slots:" : "Course Overlaps & Adjustments:"}</strong><ul style="margin: 4px 0 0 18px; padding: 0;">`;
     displaced.forEach(d => {
       bodyHtml += `<li>${escapeHtml(d.message || (d.subject + " shifted to " + d.new_slot))}</li>`;
     });
@@ -2440,6 +2511,12 @@ function showRescheduleWarning(titleMsg, warnings = [], displaced = []) {
 
   if (bodyEl) {
     bodyEl.innerHTML = bodyHtml || "A class was rescheduled and adjacent slots were shifted accordingly.";
+  }
+
+  // Show inline undo button on banner if previous state is recorded
+  if (_lastMovePreviousState && _lastMovePreviousState.length > 0) {
+    const bannerUndoBtn = document.getElementById("btn-banner-undo-move");
+    if (bannerUndoBtn) bannerUndoBtn.style.display = "inline-block";
   }
 
   banner.style.display = "block";

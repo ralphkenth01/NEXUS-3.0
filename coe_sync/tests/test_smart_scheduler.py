@@ -124,6 +124,18 @@ class TestSmartSchedulerAndCreateSchedule(unittest.TestCase):
             self.assertIsNotNone(audit)
             self.assertIn("Smart generation completed", audit.details)
 
+            # Verify that all generated schedules respect the 1-hour lunch break (12:00 - 13:00)
+            from datetime import time
+            from services.conflict_detector import times_overlap
+            lunch_st = time(12, 0)
+            lunch_et = time(13, 0)
+            all_scheds = Schedule.query.all()
+            for s in all_scheds:
+                self.assertFalse(
+                    times_overlap(s.start_time, s.end_time, lunch_st, lunch_et),
+                    f"Schedule {s.id} ({s.start_time}-{s.end_time}) violates 1-hour lunch break on {s.day_of_week}"
+                )
+
     def test_07_smart_generate_invalid_criteria_returns_400(self):
         self.login_as("chair_cpe", role="CHAIR")
         payload = {
@@ -367,6 +379,108 @@ class TestSmartSchedulerAndCreateSchedule(unittest.TestCase):
             # Existing schedule should be shifted to start at the end of the dragged class (10:30)
             self.assertEqual(e_sched.start_time.strftime("%H:%M"), "10:30")
             self.assertEqual(e_sched.end_time.strftime("%H:%M"), "12:00")
+
+    def test_14_drag_move_with_auto_adjust_disabled(self):
+        """Verify that when auto_adjust is False, overlapping classes are NOT shifted."""
+        self.login_as("chair_cpe", role="CHAIR")
+
+        with self.app.app_context():
+            from datetime import time
+            sec = Section.query.first()
+            fac = Faculty.query.first()
+            room = Room.query.first()
+            all_subjects = Subject.query.all()
+            major_subs = [s for s in all_subjects if s.classification == "MAJOR"]
+            sub1 = major_subs[0]
+            sub2 = major_subs[1] if len(major_subs) > 1 else major_subs[0]
+
+            sched_a = Schedule(
+                section_id=sec.id,
+                subject_id=sub1.id,
+                faculty_id=fac.id,
+                room_id=room.id,
+                day_of_week="THU",
+                start_time=time(9, 0),
+                end_time=time(10, 30),
+                status="DRAFT",
+            )
+            sched_b = Schedule(
+                section_id=sec.id,
+                subject_id=sub2.id,
+                faculty_id=fac.id,
+                room_id=room.id,
+                day_of_week="THU",
+                start_time=time(14, 0),
+                end_time=time(15, 30),
+                status="DRAFT",
+            )
+            db.session.add_all([sched_a, sched_b])
+            db.session.commit()
+            id_a = sched_a.id
+            id_b = sched_b.id
+
+        # Move sched_b to THU 09:00 with auto_adjust=False
+        move_payload = {
+            "target_day": "THU",
+            "target_start_time": "09:00",
+            "target_schedule_id": id_a,
+            "auto_adjust": False,
+        }
+        res = self.client.post(f"/api/schedules/{id_b}/drag-move", json=move_payload)
+        self.assertEqual(res.status_code, 200)
+
+        with self.app.app_context():
+            sa = db.session.get(Schedule, id_a)
+            sb = db.session.get(Schedule, id_b)
+            # Sched A should retain its original 09:00 start time since auto_adjust was False
+            self.assertEqual(sa.start_time.strftime("%H:%M"), "09:00")
+            self.assertEqual(sb.start_time.strftime("%H:%M"), "09:00")
+
+    def test_15_undo_schedule_adjustment_batch_revert(self):
+        """Verify that batch-revert restores previous schedule states (Undo)."""
+        self.login_as("chair_cpe", role="CHAIR")
+
+        with self.app.app_context():
+            from datetime import time
+            sec = Section.query.first()
+            fac = Faculty.query.first()
+            room = Room.query.first()
+            sub = Subject.query.filter_by(classification="MAJOR").first() or Subject.query.first()
+
+            sched = Schedule(
+                section_id=sec.id,
+                subject_id=sub.id,
+                faculty_id=fac.id,
+                room_id=room.id,
+                day_of_week="MON",
+                start_time=time(8, 0),
+                end_time=time(9, 30),
+                status="DRAFT",
+            )
+            db.session.add(sched)
+            db.session.commit()
+            sched_id = sched.id
+
+        # Move to MON 10:30
+        res = self.client.post(f"/api/schedules/{sched_id}/drag-move", json={
+            "target_day": "MON",
+            "target_start_time": "10:30",
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertIn("previous_state", data)
+        prev_state = data["previous_state"]
+
+        # Call batch-revert to Undo
+        res_undo = self.client.post("/api/schedules/batch-revert", json={
+            "revert_items": prev_state
+        })
+        self.assertEqual(res_undo.status_code, 200)
+
+        with self.app.app_context():
+            reverted_sched = db.session.get(Schedule, sched_id)
+            self.assertEqual(reverted_sched.start_time.strftime("%H:%M"), "08:00")
+            self.assertEqual(reverted_sched.end_time.strftime("%H:%M"), "09:30")
 
 
 if __name__ == "__main__":

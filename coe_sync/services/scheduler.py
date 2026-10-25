@@ -138,28 +138,29 @@ def run_smart_scheduler(config: Dict[str, Any], user_id: Optional[int] = None) -
     # 4. Resolve Subjects Pool (Only Major Subjects are eligible for Smart Scheduler batch generation)
     subjects = [s for s in Subject.query.order_by(Subject.units.desc()).all() if s.classification == "MAJOR"]
 
-    # Time slots for standard classes
+    # Time slots for standard classes (Guaranteed 1-hour lunch break: 12:00 - 13:00)
     lecture_slots = [
         ("08:00", "09:30"),
         ("09:30", "11:00"),
-        ("11:00", "12:30"),
+        ("10:30", "12:00"),
         ("13:00", "14:30"),
         ("14:30", "16:00"),
         ("16:00", "17:30"),
     ]
     lecture_slots_1_5 = [
+        ("08:00", "09:30"),
         ("09:00", "10:30"),
         ("10:30", "12:00"),
         ("13:00", "14:30"),
         ("14:30", "16:00"),
-        ("08:00", "09:30"),
         ("16:00", "17:30"),
     ]
     lab_slots = [
         ("07:00", "10:00"),
         ("08:00", "11:00"),
-        ("10:00", "13:00"),
+        ("09:00", "12:00"),
         ("13:00", "16:00"),
+        ("14:00", "17:00"),
         ("16:00", "19:00"),
     ]
     block_1_hour_slots = [
@@ -189,8 +190,9 @@ def run_smart_scheduler(config: Dict[str, Any], user_id: Optional[int] = None) -
     block_3_hour_slots = [
         ("07:00", "10:00"),
         ("08:00", "11:00"),
-        ("10:00", "13:00"),
+        ("09:00", "12:00"),
         ("13:00", "16:00"),
+        ("14:00", "17:00"),
         ("16:00", "19:00"),
     ]
     non_consecutive_day_pairs = [
@@ -222,7 +224,13 @@ def run_smart_scheduler(config: Dict[str, Any], user_id: Optional[int] = None) -
             if fac_obj:
                 subject_designated_faculty[s.subject_id] = fac_obj
 
+    lunch_start = time(12, 0)
+    lunch_end = time(13, 0)
+
     def is_sec_busy(sec_id, day, st, et, sub_group=None):
+        # Always guarantee an hour lunch break (12:00 - 13:00) each day
+        if times_overlap(st, et, lunch_start, lunch_end):
+            return True
         return any(
             s.section_id == sec_id
             and s.day_of_week == day
@@ -232,6 +240,8 @@ def run_smart_scheduler(config: Dict[str, Any], user_id: Optional[int] = None) -
         )
 
     def is_room_busy(room_id, day, st, et):
+        if times_overlap(st, et, lunch_start, lunch_end):
+            return True
         return any(
             s.room_id == room_id
             and s.day_of_week == day
@@ -240,6 +250,8 @@ def run_smart_scheduler(config: Dict[str, Any], user_id: Optional[int] = None) -
         )
 
     def is_fac_busy(fac_id, day, st, et):
+        if times_overlap(st, et, lunch_start, lunch_end):
+            return True
         return any(
             s.faculty_id == fac_id
             and s.day_of_week == day
@@ -513,7 +525,7 @@ def run_smart_scheduler(config: Dict[str, Any], user_id: Optional[int] = None) -
                     morning_lab_slots = [
                         ("07:00", "10:00"),
                         ("08:00", "11:00"),
-                        ("10:00", "13:00"),
+                        ("09:00", "12:00"),
                     ]
                     afternoon_lab_slots = [
                         ("13:00", "16:00"),

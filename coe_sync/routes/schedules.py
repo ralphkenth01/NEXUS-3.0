@@ -627,6 +627,18 @@ def move_schedule_slot(schedule_id: int):
     else:
         new_et = minutes_to_time(time_to_minutes(new_st) + dur_mins)
 
+    auto_adjust = bool(data.get("auto_adjust", True))
+
+    # Record previous state for undo capability
+    previous_state = [
+        {
+            "id": schedule.id,
+            "day_of_week": schedule.day_of_week,
+            "start_time": orig_st.strftime("%H:%M"),
+            "end_time": orig_et.strftime("%H:%M"),
+        }
+    ]
+
     # Find overlapping schedules on the target day for this section or room or faculty
     all_day_scheds = Schedule.query.filter(
         Schedule.id != schedule.id,
@@ -648,8 +660,8 @@ def move_schedule_slot(schedule_id: int):
                 colliding.append(other)
 
     displaced_info = []
-    # Auto-adjust overlapping subjects to start at the end of the dragged class
-    if colliding:
+    # Auto-adjust overlapping subjects only if auto_adjust is enabled
+    if colliding and auto_adjust:
         colliding.sort(key=lambda s: time_to_minutes(parse_time(s.start_time)))
         cursor_mins = time_to_minutes(new_et)
         for other in colliding:
@@ -658,6 +670,13 @@ def move_schedule_slot(schedule_id: int):
             other_dur = time_to_minutes(other_orig_et) - time_to_minutes(other_orig_st)
             if other_dur <= 0:
                 other_dur = 90
+
+            previous_state.append({
+                "id": other.id,
+                "day_of_week": other.day_of_week,
+                "start_time": other_orig_st.strftime("%H:%M"),
+                "end_time": other_orig_et.strftime("%H:%M"),
+            })
 
             adj_st = minutes_to_time(cursor_mins)
             adj_et = minutes_to_time(cursor_mins + other_dur)
@@ -676,6 +695,18 @@ def move_schedule_slot(schedule_id: int):
                 "old_slot": old_slot,
                 "new_slot": new_slot,
                 "message": f"Class '{sub_name}' was auto-adjusted from {old_slot} to {new_slot} (moved to the end of {schedule.subject.code if schedule.subject else 'dragged class'}).",
+            })
+    elif colliding and not auto_adjust:
+        for other in colliding:
+            other_st = parse_time(other.start_time)
+            other_et = parse_time(other.end_time)
+            sub_name = other.subject.code if other.subject else f"Subject #{other.subject_id}"
+            displaced_info.append({
+                "id": other.id,
+                "subject": sub_name,
+                "old_slot": f"{other.day_of_week} {other_st.strftime('%H:%M')}–{other_et.strftime('%H:%M')}",
+                "new_slot": f"{other.day_of_week} {other_st.strftime('%H:%M')}–{other_et.strftime('%H:%M')}",
+                "message": f"Collision detected: '{sub_name}' overlaps at {other_st.strftime('%H:%M')}–{other_et.strftime('%H:%M')} (Auto-adjust disabled).",
             })
 
     # Update dragged schedule
@@ -700,6 +731,52 @@ def move_schedule_slot(schedule_id: int):
         "dragged_schedule": schedule.to_dict(),
         "displaced_adjustments": displaced_info,
         "warnings": [d["message"] for d in displaced_info],
+        "previous_state": previous_state,
+        "auto_adjust": auto_adjust,
+    }), 200
+
+
+@schedules_bp.route("/schedules/batch-revert", methods=["POST"])
+@require_roles("CHAIR", "ADMIN")
+def batch_revert_schedules():
+    """
+    Reverts a list of schedule slots back to their previous day/time positions.
+    Payload: { "revert_items": [ { "id": int, "day_of_week": str, "start_time": str, "end_time": str } ] }
+    """
+    data = request.get_json(silent=True) or {}
+    items = data.get("revert_items", [])
+    if not items:
+        return jsonify({"error": "No schedule items provided to revert."}), 400
+
+    reverted_count = 0
+    for item in items:
+        s_id = item.get("id")
+        if not s_id:
+            continue
+        sched = db.session.get(Schedule, int(s_id))
+        if sched:
+            if "day_of_week" in item:
+                sched.day_of_week = str(item["day_of_week"]).strip().upper()
+            if "start_time" in item:
+                sched.start_time = parse_time(item["start_time"])
+            if "end_time" in item:
+                sched.end_time = parse_time(item["end_time"])
+            reverted_count += 1
+
+    db.session.commit()
+
+    audit = AuditLog(
+        user_id=session.get("user_id"),
+        action="SCHEDULE_MOVE_UNDONE",
+        details=f"Undid timetable schedule adjustment across {reverted_count} schedule slot(s).",
+    )
+    db.session.add(audit)
+    db.session.commit()
+
+    return jsonify({
+        "status": "success",
+        "message": f"Successfully reverted {reverted_count} schedule adjustment(s).",
+        "reverted_count": reverted_count,
     }), 200
 
 

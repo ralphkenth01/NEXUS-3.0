@@ -30,8 +30,17 @@
       Unpublish
     </button>
 
-    <button id="btn-chair-review-approvals" class="chair-action-pill chair-action-pill-maroon" title="Review pending student reschedules and approvals">
-      📋 Approvals <span id="chair-resched-badge" class="badge-count" style="display:none; background:#EF4444; color:#fff; border-radius:9999px; padding:1px 6px; font-size:11px; margin-left:4px; font-weight:700;">0</span>
+    <!-- Auto-Adjust Drag-and-Drop Toggle -->
+    <div class="chair-autoadjust-wrap" style="display:inline-flex; align-items:center; gap:8px; background:#FFFFFF; border:1px solid rgba(255,255,255,0.9); border-radius:9999px; padding:6px 14px; box-shadow:0 2px 8px rgba(90,16,16,0.08); font-size:12.5px; font-weight:700; color:#374151;">
+      <label for="toggle-auto-adjust" style="display:inline-flex; align-items:center; gap:6px; margin-bottom:0; cursor:pointer;" title="When enabled, moving a class shifts colliding classes below it automatically">
+        <span style="font-size:14px;">⚡</span> Auto-Adjust
+        <input type="checkbox" id="toggle-auto-adjust" checked style="accent-color: #6E1717; width:15px; height:15px; cursor:pointer;">
+      </label>
+    </div>
+
+    <!-- Undo Adjustment Action Button -->
+    <button id="btn-undo-schedule-move" class="chair-action-pill" style="display:none; background:#FFFBEB; border:1.5px solid #F59E0B; color:#B45309;" title="Undo the last timetable move and revert adjusted slots">
+      <span style="margin-right:4px;">↩️</span> Undo Adjustment
     </button>
   </div>
   {% endif %}
@@ -206,6 +215,9 @@
         </div>
       </div>
       <div style="display:flex; gap: 8px; align-items:center;">
+        <button type="button" id="btn-banner-undo-move" class="btn btn-sm" onclick="triggerUndoLastMove()" style="display:none; font-size: 12px; padding: 4px 12px; background: #FEF3C7; border: 1.5px solid #F59E0B; color: #92400E; font-weight: 700; cursor: pointer; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);">
+          ↩️ Undo Move
+        </button>
         <button type="button" class="btn btn-secondary btn-sm" onclick="dismissRescheduleWarning()" style="font-size: 12px; padding: 4px 12px; background: #FFFFFF; border: 1px solid #D1D5DB; color: #374151; font-weight: 700; cursor: pointer; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);">
           ✕ Ignore / Dismiss
         </button>
