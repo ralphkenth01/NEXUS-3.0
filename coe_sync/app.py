@@ -94,6 +94,7 @@ def create_app(config_name=None):
     with app.app_context():
         try:
             db.create_all()
+            print("[COE SYNC 2026] Database tables created / verified.", flush=True)
             # If deployed to a fresh environment (e.g. Render/Railway/Docker/Heroku),
             # automatically seed initial master data and user accounts if database is empty (skip during test suites)
             if not app.config.get("TESTING") and User.query.count() == 0:
@@ -104,8 +105,8 @@ def create_app(config_name=None):
                     print("[COE SYNC 2026] Auto-seeding completed successfully.", flush=True)
                 except Exception as seed_err:
                     print(f"[COE SYNC 2026] Auto-seeding warning: {seed_err}", flush=True)
-        except Exception:
-            pass
+        except Exception as db_err:
+            print(f"[COE SYNC 2026] Database initialization warning / notice: {db_err}", flush=True)
 
     # -------------------------------------------------------------
     # Register Modular Blueprints
