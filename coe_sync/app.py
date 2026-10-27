@@ -92,9 +92,19 @@ def create_app(config_name=None):
     db.init_app(app)
 
     with app.app_context():
+        db_uri = app.config.get("SQLALCHEMY_DATABASE_URI", "")
+        # Mask sensitive password in logs
+        masked_uri = db_uri
+        if "@" in masked_uri:
+            prefix, rest = masked_uri.split("@", 1)
+            if ":" in prefix:
+                proto_user = prefix.rsplit(":", 1)[0]
+                masked_uri = f"{proto_user}:****@{rest}"
+        print(f"[COE SYNC 2026] Initializing with Database URI: {masked_uri}", flush=True)
+
         try:
             db.create_all()
-            print("[COE SYNC 2026] Database tables created / verified.", flush=True)
+            print("[COE SYNC 2026] Database tables created / verified successfully.", flush=True)
             # If deployed to a fresh environment (e.g. Render/Railway/Docker/Heroku),
             # automatically seed initial master data and user accounts if database is empty (skip during test suites)
             if not app.config.get("TESTING") and User.query.count() == 0:
@@ -106,7 +116,7 @@ def create_app(config_name=None):
                 except Exception as seed_err:
                     print(f"[COE SYNC 2026] Auto-seeding warning: {seed_err}", flush=True)
         except Exception as db_err:
-            print(f"[COE SYNC 2026] Database initialization warning / notice: {db_err}", flush=True)
+            print(f"[COE SYNC 2026] Database initialization error: {db_err}", flush=True)
 
     # -------------------------------------------------------------
     # Register Modular Blueprints
