@@ -25,10 +25,12 @@ def resolve_database_uri() -> str:
         return _default_sqlite_uri
 
     # Handle PostgreSQL (Supabase / Render)
-    # SQLAlchemy requires 'postgresql://' or 'postgresql+psycopg2://'
-    # Render and Supabase often supply 'postgres://' which is deprecated in SQLAlchemy 1.4+
+    # SQLAlchemy defaults 'postgresql://' to psycopg (v3). Since psycopg2-binary is installed,
+    # normalize to 'postgresql+psycopg2://'
     if configured_uri.startswith("postgres://"):
-        configured_uri = configured_uri.replace("postgres://", "postgresql://", 1)
+        configured_uri = configured_uri.replace("postgres://", "postgresql+psycopg2://", 1)
+    elif configured_uri.startswith("postgresql://"):
+        configured_uri = configured_uri.replace("postgresql://", "postgresql+psycopg2://", 1)
 
     if configured_uri.startswith("postgresql"):
         # Supabase and Render PostgreSQL URI

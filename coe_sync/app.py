@@ -111,7 +111,7 @@ def create_app(config_name=None):
                 print("[COE SYNC 2026] Fresh deployment detected: database is empty. Auto-seeding initial data...", flush=True)
                 try:
                     from seed_data import seed_database
-                    seed_database(app)
+                    seed_database(app, wipe_first=False)
                     print("[COE SYNC 2026] Auto-seeding completed successfully.", flush=True)
                 except Exception as seed_err:
                     print(f"[COE SYNC 2026] Auto-seeding warning: {seed_err}", flush=True)

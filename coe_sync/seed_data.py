@@ -36,11 +36,10 @@ from models import (
 from import_sql_dump import load_and_clean_sql_dump
 
 
-def seed_database(app=None, stage_demo_schedules: bool = False):
+def seed_database(app=None, stage_demo_schedules: bool = False, wipe_first: bool = True):
     """
     Idempotent seeding function.
-    Drops all existing tables, recreates schema, imports cleaned data-2.sql data,
-    and initializes realistic BulSU COE master fixtures.
+    Initializes realistic BulSU COE master fixtures from data-final.sql.
     """
     from app import create_app
 
@@ -48,10 +47,13 @@ def seed_database(app=None, stage_demo_schedules: bool = False):
         app = create_app()
 
     with app.app_context():
-        print("[COE SYNC 2026] Resetting and wiping database schema...")
-        db.drop_all()
-        db.create_all()
-        print("[COE SYNC 2026] Schema recreated successfully.")
+        if wipe_first:
+            print("[COE SYNC 2026] Resetting and wiping database schema...")
+            db.drop_all()
+            db.create_all()
+            print("[COE SYNC 2026] Schema recreated successfully.")
+        else:
+            db.create_all()
 
         # Load cleaned data from data-final.sql (Single Source of Truth)
         print("[COE SYNC 2026] Loading and cleaning data-final.sql...")
@@ -201,6 +203,7 @@ def seed_database(app=None, stage_demo_schedules: bool = False):
                 )
 
         # 5b. Seed IT Support Team Account (The only system account outside data-final.sql)
+        next_user_id = max((u["id"] for u in dump_data.get("users", [])), default=130) + 1
         alias_accounts = [
             ("it_team", "IT", "COE-IT", None),
         ]
@@ -210,6 +213,7 @@ def seed_database(app=None, stage_demo_schedules: bool = False):
                 seeded_usernames.add(uname)
                 user_objects.append(
                     User(
+                        id=next_user_id,
                         username=uname,
                         password_hash=default_pwd_hash,
                         role=urole,
@@ -220,9 +224,22 @@ def seed_database(app=None, stage_demo_schedules: bool = False):
                         demo_password="password",
                     )
                 )
+                next_user_id += 1
 
         db.session.add_all(user_objects)
         db.session.flush()
+
+        # In PostgreSQL, explicitly inserting IDs does not advance sequences automatically.
+        # Advance sequence to prevent duplicate key errors on future inserts.
+        try:
+            if db.engine.dialect.name == "postgresql":
+                for tbl in ["user", "faculty", "section", "subject", "room"]:
+                    db.session.execute(
+                        db.text(f"SELECT setval(pg_get_serial_sequence('\"{tbl}\"', 'id'), COALESCE(MAX(id), 1)) FROM \"{tbl}\";")
+                    )
+                db.session.commit()
+        except Exception as seq_err:
+            print(f"[COE SYNC 2026] Notice syncing Postgres sequence: {seq_err}", flush=True)
 
         # -------------------------------------------------------------
         # 6. Seed Faculty Availability (1 Blackout Window on Friday)
