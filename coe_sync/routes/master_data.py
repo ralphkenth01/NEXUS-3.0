@@ -12,6 +12,7 @@ from flask import Blueprint, request, jsonify, session
 from datetime import time
 from models import (
     db,
+    User,
     Room,
     Faculty,
     Section,
@@ -21,7 +22,14 @@ from models import (
     Schedule,
     FacultySubject,
 )
-from routes.auth import require_roles
+from routes.auth import (
+    require_roles,
+    generate_faculty_username,
+    append_sql_dump_faculty,
+    append_sql_dump_user,
+    remove_sql_dump_faculty,
+    remove_sql_dump_user,
+)
 
 master_data_bp = Blueprint("master_data", __name__, url_prefix="/api")
 
@@ -180,24 +188,88 @@ def create_faculty():
     if Faculty.query.filter_by(email=email).first():
         return jsonify({"error": f"Email '{email}' is already registered."}), 409
 
+    program = str(data.get("program") or session.get("active_program") or "MEE").strip().upper()
+
     faculty = Faculty(
         name=name,
         email=email,
+        program=program,
         max_units=max_units,
         current_units=0,
     )
     db.session.add(faculty)
     db.session.flush()
 
+    # Department full name mapping for data-final.sql
+    dept_mapping = {
+        "CE": "Civil Engineering",
+        "CPE": "Computer Engineering",
+        "EE": "Electrical Engineering",
+        "ECE": "Electronics Engineering",
+        "IE": "Industrial Engineering",
+        "MFGE": "Manufacturing Engineering",
+        "ME": "Mechanical Engineering",
+        "MEE": "Mechatronics Engineering",
+        "GEN": "General Engineering",
+    }
+    dept_full = dept_mapping.get(faculty.program, "Mechatronics Engineering")
+
+    # 1. Update data-final.sql `coe facculty` table
+    append_sql_dump_faculty(faculty.id, faculty.name, dept_full)
+
+    # 2. Generate User Account starting with FAC- First initial and Last name
+    base_username = generate_faculty_username(faculty.name)
+    user_uname = base_username
+    counter = 1
+    while User.query.filter_by(username=user_uname).first():
+        counter += 1
+        user_uname = f"{base_username}{counter}"
+
+    # Default password for newly generated faculty user
+    default_pwd = "password"
+    user_account = User(
+        username=user_uname,
+        role="FACULTY",
+        program=faculty.program,
+        reference_id=faculty.id,
+        is_active_status=True,
+        must_change_credentials=True,
+    )
+    user_account.set_password(default_pwd)
+    user_account.demo_password = default_pwd
+    db.session.add(user_account)
+    db.session.flush()
+
+    # 3. Update data-final.sql `users` table
+    append_sql_dump_user(
+        user_id=user_account.id,
+        username=user_account.username,
+        password=default_pwd,
+        role="FCLTY_DEPT",
+        dept=dept_full,
+        ref_id=faculty.id,
+    )
+
     audit = AuditLog(
         user_id=session.get("user_id"),
         action="FACULTY_CREATED",
-        details=f"Created faculty {faculty.name} ({faculty.email}, max units: {faculty.max_units}).",
+        details=f"Created faculty {faculty.name} ({faculty.email}, max units: {faculty.max_units}) and user account '{user_uname}'.",
     )
     db.session.add(audit)
     db.session.commit()
 
-    return jsonify({"status": "success", "message": "Faculty member created successfully.", "data": faculty.to_dict()}), 201
+    faculty_dict = faculty.to_dict()
+    faculty_dict["user_account"] = {
+        "id": user_account.id,
+        "username": user_account.username,
+        "role": user_account.role,
+    }
+
+    return jsonify({
+        "status": "success",
+        "message": f"Faculty member '{faculty.name}' and user account '{user_uname}' created successfully.",
+        "data": faculty_dict,
+    }), 201
 
 
 @master_data_bp.route("/faculty/<int:faculty_id>", methods=["GET"])
@@ -364,12 +436,26 @@ def delete_faculty(faculty_id: int):
         return jsonify({"error": f"Faculty #{faculty_id} not found."}), 404
 
     name = faculty.name
+    
+    # 1. Remove from data-final.sql coe facculty table
+    remove_sql_dump_faculty(faculty.id, name)
+
+    # 2. Look up and remove linked User account
+    linked_user = User.query.filter_by(reference_id=faculty.id, role="FACULTY").first()
+    if not linked_user:
+        # Also check role FCLTY_DEPT
+        linked_user = User.query.filter(User.reference_id == faculty.id, User.username.startswith("FAC-")).first()
+    
+    if linked_user:
+        remove_sql_dump_user(linked_user.username)
+        db.session.delete(linked_user)
+
     db.session.delete(faculty)
 
     audit = AuditLog(
         user_id=session.get("user_id"),
         action="FACULTY_DELETED",
-        details=f"Deleted faculty {name} (#{faculty_id}).",
+        details=f"Deleted faculty {name} (#{faculty_id}) and linked user account.",
     )
     db.session.add(audit)
     db.session.commit()

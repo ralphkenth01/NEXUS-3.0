@@ -695,8 +695,8 @@ function renderSubjectsTable(subjects) {
       <td>${sub.hours_per_week} hrs/wk</td>
       <td>
         <select class="form-select form-select-sm" onchange="quickUpdateSubjectSlotDuration(${sub.id}, this.value)" style="font-size: 11.5px; font-weight: 700; padding: 3px 8px; border-radius: 6px; cursor: pointer; ${formatBadgeClass}">
-          <option value="3_HOUR_BLOCK" ${!isSplit ? "selected" : ""}>3-Hr Straight Block</option>
-          <option value="1.5_HOUR_SPLIT" ${isSplit ? "selected" : ""}>2x 1.5-Hr Split</option>
+          <option value="3_HOUR_BLOCK" ${!isSplit ? "selected" : ""}>Straight</option>
+          <option value="1.5_HOUR_SPLIT" ${isSplit ? "selected" : ""}>Two Sessions</option>
         </select>
       </td>
       <td>
@@ -719,7 +719,7 @@ window.quickUpdateSubjectSlotDuration = async function(subjectId, newPref) {
       preferred_session_type: newPref === "1.5_HOUR_SPLIT" ? "SPLIT" : "STRAIGHT"
     });
     if (res.status === "success") {
-      showToast(`Slot duration updated to ${newPref === "1.5_HOUR_SPLIT" ? "2x 1.5-Hr Split" : "3-Hr Straight Block"}`);
+      showToast(`Slot duration updated to ${newPref === "1.5_HOUR_SPLIT" ? "Two Sessions" : "Straight"}`);
       const sub = masterDataCache.subjects?.find(s => s.id === subjectId);
       if (sub) {
         sub.split_preference = newPref;
@@ -844,6 +844,20 @@ function buildModalForm(entity, data = null) {
         <span class="form-error" id="err-email"></span>
       </div>
       <div class="form-field">
+        <label class="form-label" for="inp-fac-prog">Department Program *</label>
+        <select class="form-select" id="inp-fac-prog" name="program">
+          <option value="MEE" ${!data || data.program === "MEE" ? "selected" : ""}>Mechatronics Engineering (MEE)</option>
+          <option value="CE" ${data && data.program === "CE" ? "selected" : ""}>Civil Engineering (CE)</option>
+          <option value="CPE" ${data && data.program === "CPE" ? "selected" : ""}>Computer Engineering (CPE)</option>
+          <option value="EE" ${data && data.program === "EE" ? "selected" : ""}>Electrical Engineering (EE)</option>
+          <option value="ECE" ${data && data.program === "ECE" ? "selected" : ""}>Electronics Engineering (ECE)</option>
+          <option value="IE" ${data && data.program === "IE" ? "selected" : ""}>Industrial Engineering (IE)</option>
+          <option value="MFGE" ${data && data.program === "MFGE" ? "selected" : ""}>Manufacturing Engineering (MFGE)</option>
+          <option value="ME" ${data && data.program === "ME" ? "selected" : ""}>Mechanical Engineering (ME)</option>
+          <option value="GEN" ${data && data.program === "GEN" ? "selected" : ""}>General Engineering (GEN)</option>
+        </select>
+      </div>
+      <div class="form-field">
         <label class="form-label" for="inp-max-units">Max Teaching Units *</label>
         <input class="form-input" type="number" id="inp-max-units" name="max_units" min="1" max="40" required placeholder="Default 21" value="${data ? data.max_units : "21"}">
         <span class="form-error" id="err-max_units"></span>
@@ -906,11 +920,11 @@ function buildModalForm(entity, data = null) {
       <div class="form-field">
         <label class="form-label" for="inp-split-pref">Slot Duration Preference</label>
         <select class="form-select" id="inp-split-pref" name="split_preference">
-          <option value="3_HOUR_BLOCK" ${!data || data.split_preference !== "1.5_HOUR_SPLIT" ? "selected" : ""}>3-Hr Straight Block (Default)</option>
-          <option value="1.5_HOUR_SPLIT" ${data && data.split_preference === "1.5_HOUR_SPLIT" ? "selected" : ""}>2x 1.5-Hr Split</option>
+          <option value="3_HOUR_BLOCK" ${!data || data.split_preference !== "1.5_HOUR_SPLIT" ? "selected" : ""}>Straight</option>
+          <option value="1.5_HOUR_SPLIT" ${data && data.split_preference === "1.5_HOUR_SPLIT" ? "selected" : ""}>Two Sessions</option>
         </select>
         <span class="field-help" style="font-size:11px; color:#64748B; margin-top:3px; display:block;">
-          Determines whether the solver schedules this subject as 3 hours straight or splits it into two half sessions.
+          Determines whether the solver schedules this subject as straight or splits it into two sessions.
         </span>
       </div>
     `;
@@ -1846,7 +1860,7 @@ window.renderAssignSubjectMultiList = function(subjects, alreadyHandledIds = new
             <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
               ${sub.units} Units &bull; ${subType} &bull; ${hrs} Hours/Week &bull; <span style="font-weight:700; color:${cls === 'Major' ? 'var(--bulsu-maroon)' : '#B45309'};">${cls} Subject</span>
               <span id="assign-sub-badge-${sub.id}" class="badge-duration-tag" style="margin-left: 6px; font-size: 10px; font-weight: 800; background: rgba(104,28,46,0.1); color: var(--bulsu-maroon); padding: 1px 6px; border-radius: 4px;">
-                ${defaultSplit === '1.5_HOUR_SPLIT' ? '1.5 Hours' : '3.0 Hours'}
+                ${defaultSplit === '1.5_HOUR_SPLIT' ? 'Two Sessions' : 'Straight'}
               </span>
             </div>
           </div>
@@ -1854,7 +1868,7 @@ window.renderAssignSubjectMultiList = function(subjects, alreadyHandledIds = new
         
         <!-- 3-Dots Settings Popover Menu Button -->
         <div style="position: relative; margin-left: 8px;">
-          <button type="button" class="btn btn-sm btn-dots-settings" onclick="toggleAssignSubSettings(${sub.id}, event)" style="background: none; border: 1px solid #E2E8F0; border-radius: 6px; padding: 3px 7px; color: #64748B; cursor: pointer; font-size: 14px; line-height: 1;" title="Duration Settings (1.5h or 3h)">
+          <button type="button" class="btn btn-sm btn-dots-settings" onclick="toggleAssignSubSettings(${sub.id}, event)" style="background: none; border: 1px solid #E2E8F0; border-radius: 6px; padding: 3px 7px; color: #64748B; cursor: pointer; font-size: 14px; line-height: 1;" title="Duration Settings">
             &#8942;
           </button>
           <div id="assign-sub-menu-${sub.id}" class="assign-sub-settings-menu" style="display: none; position: absolute; right: 0; top: 100%; z-index: 1050; background: #FFF; border: 1px solid #CBD5E1; border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,0.12); padding: 6px; min-width: 175px;">
@@ -1863,11 +1877,11 @@ window.renderAssignSubjectMultiList = function(subjects, alreadyHandledIds = new
             </div>
             <label style="display: flex; align-items: center; gap: 6px; font-size: 11.5px; padding: 4px 8px; cursor: pointer; border-radius: 4px; margin: 0; font-weight: 600;">
               <input type="radio" name="sub-split-${sub.id}" value="3_HOUR_BLOCK" ${defaultSplit !== '1.5_HOUR_SPLIT' ? 'checked' : ''} onchange="setAssignSubDuration(${sub.id}, '3_HOUR_BLOCK')">
-              <span>3.0 Hours (Block Slot)</span>
+              <span>Straight</span>
             </label>
             <label style="display: flex; align-items: center; gap: 6px; font-size: 11.5px; padding: 4px 8px; cursor: pointer; border-radius: 4px; margin: 0; font-weight: 600;">
               <input type="radio" name="sub-split-${sub.id}" value="1.5_HOUR_SPLIT" ${defaultSplit === '1.5_HOUR_SPLIT' ? 'checked' : ''} onchange="setAssignSubDuration(${sub.id}, '1.5_HOUR_SPLIT')">
-              <span>1.5 Hours (Split Slot)</span>
+              <span>Two Sessions</span>
             </label>
           </div>
         </div>
@@ -1900,7 +1914,7 @@ document.addEventListener("click", function(e) {
 window.setAssignSubDuration = function(subId, duration) {
   const badge = document.getElementById(`assign-sub-badge-${subId}`);
   if (badge) {
-    badge.textContent = duration === "3_HOUR_BLOCK" ? "3.0 Hours" : "1.5 Hours";
+    badge.textContent = duration === "3_HOUR_BLOCK" ? "Straight" : "Two Sessions";
   }
   if (_selectedAssignSubjects.has(subId)) {
     _selectedAssignSubjects.get(subId).split_preference = duration;

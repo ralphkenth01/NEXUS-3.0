@@ -1655,10 +1655,13 @@ function buildConflictCard(c) {
             </span>
           </div>
         </div>
-        <div class="conflict-actions" style="margin-top:10px;">
+        <div class="conflict-actions" style="margin-top:10px; display:flex; gap:8px; align-items:center;">
           ${isAdmin ? `
             <button class="btn btn-sm btn-primary" onclick="openModal(${c.schedA.id})" style="background:var(--bulsu-maroon); color:#FFF; font-weight:700; font-size:11.5px; padding:4px 12px; border-radius:6px;">
               Assign Instructor (#${c.schedA.id})
+            </button>
+            <button class="btn btn-sm btn-danger" onclick="deleteSchedule(${c.schedA.id}, '${escapeAttr(c.schedA.subject_code)}', '${escapeAttr(c.schedA.section_name)}')" style="background:#DC2626; color:#FFF; border:none; font-weight:700; font-size:11.5px; padding:4px 10px; border-radius:6px; cursor:pointer;" title="Delete this slot">
+              🗑️ Delete
             </button>
           ` : `
             <span style="font-size:11px; color:var(--text-muted); font-style:italic;">Pending Program Chair instructor assignment</span>
@@ -1687,7 +1690,7 @@ function buildConflictCard(c) {
           <span class="conflict-time">${c.schedB.day_of_week} ${formatTimeTo12(c.schedB.start_time)}–${formatTimeTo12(c.schedB.end_time)}</span>
         </div>
       </div>
-      <div class="conflict-actions">
+      <div class="conflict-actions" style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
         ${isAdmin ? `
           <button class="btn btn-sm btn-outline" onclick="openModal(${c.schedA.id})">Edit #${c.schedA.id}</button>
           <button class="btn btn-sm btn-outline" onclick="openModal(${c.schedB.id})">Edit #${c.schedB.id}</button>
@@ -1695,6 +1698,12 @@ function buildConflictCard(c) {
             data-sched-id="${c.schedA.id}"
             data-alt="${escapeAttr(JSON.stringify({ subject_id: c.schedA.subject_id, section_id: c.schedA.section_id, faculty_id: c.schedA.faculty_id, room_id: c.schedA.room_id, day_of_week: c.schedA.day_of_week, start_time: c.schedA.start_time, end_time: c.schedA.end_time }))}">
             🔁 Find Alternative
+          </button>
+          <button class="btn btn-sm btn-danger" onclick="deleteSchedule(${c.schedA.id}, '${escapeAttr(c.schedA.subject_code)}', '${escapeAttr(c.schedA.section_name)}')" style="background:#DC2626; color:#FFF; border:none; font-weight:700; font-size:11px; padding:3px 8px; border-radius:4px; cursor:pointer;" title="Delete schedule #${c.schedA.id}">
+            🗑️ Del #${c.schedA.id}
+          </button>
+          <button class="btn btn-sm btn-danger" onclick="deleteSchedule(${c.schedB.id}, '${escapeAttr(c.schedB.subject_code)}', '${escapeAttr(c.schedB.section_name)}')" style="background:#DC2626; color:#FFF; border:none; font-weight:700; font-size:11px; padding:3px 8px; border-radius:4px; cursor:pointer;" title="Delete schedule #${c.schedB.id}">
+            🗑️ Del #${c.schedB.id}
           </button>
         ` : `
           <span style="font-size:11px; color:var(--text-muted); font-style:italic;">Read-only (Chair access required to resolve)</span>

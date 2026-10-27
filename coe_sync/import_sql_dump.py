@@ -425,7 +425,75 @@ def load_and_clean_data_final_sql(sql_file_path: Path = None) -> Dict[str, Any]:
             "split_preference": split_pref,
         })
 
-    # 4. Users (129 users: admin, DEAN-AAlba, 10 CHAIRs, 116 FACs, SMIDeJesus)
+    # 4. Rooms (77 Rooms from coe room list in data-final.sql)
+    raw_rooms = parse_insert_tuples(sql_text, "coe room list")
+    rooms_list = []
+    for r in raw_rooms:
+        row_id = int(r[0])
+        r_num = " ".join(r[1].split()).strip()
+        r_type_raw = r[2].strip().upper() if len(r) > 2 and r[2] else "LEC"
+        
+        # Determine room_type (LAB vs LECTURE)
+        is_lab = any(kw in r_type_raw for kw in ("LAB", "DRAWING"))
+        norm_type = "LAB" if is_lab else "LECTURE"
+
+        # Determine building
+        if r_num.startswith("NH"):
+            building = "Natividad Hall"
+        elif "COE 2" in r_num:
+            building = "COE 2 Building"
+        else:
+            building = "COE 1 Building"
+
+        # Infer specialized department or general assignment based on room code
+        r_up = r_num.upper()
+        if "CE" in r_up:
+            dept = "CE"
+        elif "CPE" in r_up:
+            dept = "CPE"
+        elif "EE" in r_up:
+            dept = "EE"
+        elif "ECE" in r_up:
+            dept = "ECE"
+        elif "IE" in r_up:
+            dept = "IE"
+        elif "MFGE" in r_up or "MFE" in r_up:
+            dept = "MFGE"
+        elif "MEE" in r_up:
+            dept = "MEE"
+        elif "ME" in r_up:
+            dept = "ME"
+        elif "COMP" in r_type_raw or "COMP LAB" in r_type_raw:
+            dept = "CPE"
+        elif "DRAWING" in r_type_raw:
+            dept = "GEN"
+        else:
+            dept = "GEN"
+
+        # Equipment details based on type
+        if "COMP" in r_type_raw:
+            equip = "Computer Workstations, LAN Switch, Multimedia Projector"
+        elif "DRAWING" in r_type_raw:
+            equip = "Drafting Tables, T-Squares, Whiteboard"
+        elif "AVR" in r_type_raw:
+            equip = "Tiered Seating, Audio-Visual Projection, Sound System"
+        elif norm_type == "LAB":
+            equip = "Laboratory Benches, Specialized Equipment, Power Supply"
+        else:
+            equip = "Multimedia Projector, Whiteboard, Air Conditioning"
+
+        rooms_list.append({
+            "id": row_id,
+            "room_code": r_num,
+            "room_type": norm_type,
+            "capacity": 45,
+            "building": building,
+            "equipment": equip,
+            "department": dept,
+            "is_available": True,
+        })
+
+    # 5. Users (129 users: admin, DEAN-AAlba, 10 CHAIRs, 116 FACs, SMIDeJesus)
     raw_users = parse_insert_tuples(sql_text, "users")
     users_list = []
     seen_usernames = set()
@@ -488,6 +556,7 @@ def load_and_clean_data_final_sql(sql_file_path: Path = None) -> Dict[str, Any]:
         "faculty": faculty_list,
         "sections": sections_list,
         "subjects": subjects_list,
+        "rooms": rooms_list,
         "users": users_list,
     }
 

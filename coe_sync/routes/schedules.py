@@ -792,15 +792,16 @@ def delete_schedule(schedule_id: int):
         return jsonify({"error": f"Schedule #{schedule_id} not found."}), 404
 
     faculty_id = schedule.faculty_id
-    sched_desc = (
-        f"Schedule #{schedule.id}: {schedule.subject.code} "
-        f"({schedule.section.name}) with {schedule.faculty.name}"
-    )
+    sub_code = schedule.subject.code if schedule.subject else f"Subject #{schedule.subject_id}"
+    sec_name = schedule.section.name if schedule.section else f"Section #{schedule.section_id}"
+    fac_name = schedule.faculty.name if schedule.faculty else "TBA"
+    sched_desc = f"Schedule #{schedule.id}: {sub_code} ({sec_name}) with {fac_name}"
 
     db.session.delete(schedule)
     db.session.flush()
 
-    recalculate_faculty_units(faculty_id)
+    if faculty_id:
+        recalculate_faculty_units(faculty_id)
 
     audit = AuditLog(
         user_id=session.get("user_id"),

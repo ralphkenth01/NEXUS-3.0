@@ -352,20 +352,39 @@ def run_smart_scheduler(config: Dict[str, Any], user_id: Optional[int] = None) -
             sub_split_pref = getattr(sub, "split_preference", None) or "3_HOUR_BLOCK"
             sub_session_pref = getattr(sub, "preferred_session_type", None)
 
+            target_hours = float(sub.hours_per_week or sub.units or 3)
+            is_two_sessions = False
+
             if raw_mode in ("straight", "3_hour_straight", "3-hr straight"):
-                is_split_lecture = False
-            elif raw_mode in ("split", "2x 1.5-hr split", "1.5_hour_split"):
-                is_split_lecture = (sub.subject_type == "LECTURE" and (sub.units == 3 or sub.hours_per_week == 3))
+                is_two_sessions = False
+            elif raw_mode in ("split", "two_sessions", "two sessions", "2x 1.5-hr split", "1.5_hour_split"):
+                is_two_sessions = (sub.subject_type == "LECTURE" and target_hours >= 1)
             else:
-                # Rule: Do NOT split the 3hrs unless it is specifically marked on the SUBJECT to be split into half
-                if sub_split_pref in ("SPLIT", "1.5_HOUR_SPLIT") or sub_session_pref == "SPLIT":
-                    is_split_lecture = (sub.subject_type == "LECTURE" and (sub.units == 3 or sub.hours_per_week == 3))
+                # Rule: Split if specifically marked on the SUBJECT as Two Sessions (SPLIT or 1.5_HOUR_SPLIT)
+                if sub_split_pref in ("SPLIT", "1.5_HOUR_SPLIT", "TWO_SESSIONS") or sub_session_pref in ("SPLIT", "TWO_SESSIONS"):
+                    is_two_sessions = (sub.subject_type == "LECTURE" and target_hours >= 1)
                 else:
-                    is_split_lecture = False
+                    is_two_sessions = False
 
             slot_placed = False
 
-            if is_split_lecture:
+            if is_two_sessions:
+                # Divide the hour/week by 2 to determine the duration of each session
+                session_duration_minutes = int(round((target_hours / 2.0) * 60))
+
+                # Build candidate time slots conforming to session_duration_minutes and 12:00-13:00 lunch break
+                two_session_slots = []
+                for start_min in range(7 * 60, 19 * 60, 30):
+                    end_min = start_min + session_duration_minutes
+                    if end_min > 20 * 60:
+                        break
+                    # Avoid 12:00-13:00 lunch break
+                    if start_min < 13 * 60 and end_min > 12 * 60:
+                        continue
+                    st_str = f"{start_min // 60:02d}:{start_min % 60:02d}"
+                    et_str = f"{end_min // 60:02d}:{end_min % 60:02d}"
+                    two_session_slots.append((st_str, et_str))
+
                 # Search across candidate faculty first (so assigned faculty gets scheduled across alternative slots before falling back to TBA)
                 for fac in candidate_faculty:
                     if slot_placed:
@@ -375,7 +394,7 @@ def run_smart_scheduler(config: Dict[str, Any], user_id: Optional[int] = None) -
                     for day1, day2 in non_consecutive_day_pairs:
                         if slot_placed:
                             break
-                        for st_str, et_str in lecture_slots_1_5:
+                        for st_str, et_str in two_session_slots:
                             if slot_placed:
                                 break
                             st = parse_time(st_str)
@@ -417,6 +436,7 @@ def run_smart_scheduler(config: Dict[str, Any], user_id: Optional[int] = None) -
                                 v1 = validate_schedule_slot(p1)
                                 v2 = validate_schedule_slot(p2)
                                 if v1["valid"] and v2["valid"]:
+                                    split_pref_tag = "1.5_HOUR_SPLIT" if abs(target_hours - 3.0) < 0.1 else "TWO_SESSIONS"
                                     sched1 = Schedule(
                                         subject_id=sub.id,
                                         section_id=sec.id,
@@ -426,7 +446,7 @@ def run_smart_scheduler(config: Dict[str, Any], user_id: Optional[int] = None) -
                                         start_time=st,
                                         end_time=et,
                                         status="DRAFT",
-                                        split_preference="1.5_HOUR_SPLIT",
+                                        split_preference=split_pref_tag,
                                     )
                                     sched2 = Schedule(
                                         subject_id=sub.id,
@@ -437,7 +457,7 @@ def run_smart_scheduler(config: Dict[str, Any], user_id: Optional[int] = None) -
                                         start_time=st,
                                         end_time=et,
                                         status="DRAFT",
-                                        split_preference="1.5_HOUR_SPLIT",
+                                        split_preference=split_pref_tag,
                                     )
                                     db.session.add(sched1)
                                     db.session.add(sched2)

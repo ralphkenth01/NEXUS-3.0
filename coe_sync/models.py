@@ -27,6 +27,8 @@ class User(db.Model):
         db.Enum(
             "DEAN",
             "ADMIN",
+            "IT",
+            "IT_TEAM",
             "CHAIR",
             "PROG_CHA",
             "FACULTY",
@@ -61,25 +63,20 @@ class User(db.Model):
     def set_password(self, password: str) -> None:
         """Hash and store password."""
         self.password_hash = generate_password_hash(password)
+        self.demo_password = None
 
     def check_password(self, password: str) -> bool:
-        """Verify plain text password against stored hash with backward-compatible demo fallback."""
-        if not password:
+        """Verify plain text password against stored hash."""
+        if not password or not self.password_hash:
             return False
-        if check_password_hash(self.password_hash, password):
-            return True
-        if self.demo_password and password == self.demo_password:
-            return True
-        # Keep default password verification compatible with password and nexus2026 for uncustomized demo accounts
-        if self.demo_password in {"password", "nexus2026", "chair123", "admin123", "faculty123", "student123"} or self.must_change_credentials:
-            if password in {self.demo_password, "password", "nexus2026", "chair123", "admin123", "faculty123", "student123"}:
-                return True
-        return False
+        return check_password_hash(self.password_hash, password)
 
     def to_dict(self, include_sensitive: bool = False) -> dict:
         """Serialize User to dictionary."""
         title = "System Administrator"
-        if self.role == "DEAN":
+        if self.role in ("IT", "IT_TEAM"):
+            title = "IT Support Team"
+        elif self.role == "DEAN":
             title = "College Dean"
         elif self.role in ("CHAIR", "PROG_CHA"):
             title = f"{self.program or ''} Program Chair".strip()
@@ -902,5 +899,50 @@ class InterDepartmentRequest(db.Model):
             f"<InterDepartmentRequest id={self.id} from={self.source_department} "
             f"to={self.target_department} status='{self.status}'>"
         )
+
+
+class PasswordResetRequest(db.Model):
+    """
+    Password Reset Request model for users who forgot their credentials.
+    Allows submitting a reset request to the IT/Admin team to restore password to default.
+    """
+
+    __tablename__ = "password_reset_request"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
+    username = db.Column(db.String(80), nullable=False)
+    role = db.Column(db.String(50), nullable=True)
+    program = db.Column(db.String(50), nullable=True)
+    reason = db.Column(db.String(255), nullable=True)
+    status = db.Column(
+        db.Enum("PENDING", "APPROVED", "REJECTED", name="reset_request_status_enum"),
+        default="PENDING",
+        nullable=False,
+        index=True,
+    )
+    admin_notes = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    resolved_at = db.Column(db.DateTime, nullable=True)
+
+    user = db.relationship("User", backref=db.backref("reset_requests", lazy=True, cascade="all, delete-orphan"))
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "username": self.username,
+            "role": self.role,
+            "program": self.program,
+            "reason": self.reason,
+            "status": self.status,
+            "admin_notes": self.admin_notes,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "resolved_at": self.resolved_at.isoformat() if self.resolved_at else None,
+        }
+
+    def __repr__(self) -> str:
+        return f"<PasswordResetRequest id={self.id} user='{self.username}' status='{self.status}'>"
+
 
 

@@ -367,11 +367,59 @@
           </div>
         </div>
 
+        <div style="display:flex; justify-content:flex-end; margin-top: -6px; margin-bottom: 12px;">
+          <button type="button" id="btn-forgot-password-link" style="background:none; border:none; color:var(--sidebar-bg); font-size:12.5px; font-weight:600; cursor:pointer; text-decoration:underline; padding:0;">
+            Forgot Password? Request IT Reset
+          </button>
+        </div>
+
         <button type="submit" id="btn-submit-login" class="btn-login-submit">
           <span>Authenticate &amp; Enter Gateway</span>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
         </button>
       </form>
+    </div>
+  </div>
+
+  <!-- Forgot Password / IT Reset Request Modal -->
+  <div id="modal-forgot-password" class="change-cred-overlay" style="display:none;">
+    <div class="change-cred-modal">
+      <div class="change-cred-header">
+        <h2 class="change-cred-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Request IT Password Reset
+        </h2>
+        <p class="change-cred-desc">Submit your username to the COE IT Admin team to restore your account password to default.</p>
+      </div>
+
+      <div class="change-cred-body">
+        <div id="forgot-alert" class="login-alert"></div>
+
+        <form id="form-forgot-password">
+          <div class="form-group">
+            <label class="form-label" for="inp-forgot-username">Your Username or ID *</label>
+            <input type="text" id="inp-forgot-username" class="login-input" required placeholder="e.g. chair_cpe, prof_santos, dean">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="inp-forgot-reason">Reason / Note for IT Team (Optional)</label>
+            <input type="text" id="inp-forgot-reason" class="login-input" placeholder="e.g. Forgot password, need default reset">
+          </div>
+
+          <div style="background:#F0FDF4; border:1px solid #BBF7D0; border-radius:6px; padding:10px 12px; margin-bottom:14px; font-size:12px; color:#166534;">
+            <strong>Notice:</strong> Once approved by the IT Team, your password will be reset to the default <strong>nexus2026</strong>.
+          </div>
+
+          <div style="display:flex; gap:10px;">
+            <button type="button" id="btn-cancel-forgot" class="login-input" style="width:40%; text-align:center; cursor:pointer; background:#F3F4F6; border:1px solid #D1D5DB; font-weight:600;">
+              Cancel
+            </button>
+            <button type="submit" id="btn-submit-forgot" class="btn-login-submit" style="width:60%; background:#2563EB;">
+              <span>Submit Request &rarr;</span>
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   </div>
 
@@ -383,7 +431,7 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
           Credentials Management
         </h2>
-        <p class="change-cred-desc">Update your Program Chair security credentials before accessing the timetable.</p>
+        <p class="change-cred-desc">Please set a secure new password for your account before entering the system.</p>
       </div>
 
       <div class="change-cred-body">
@@ -391,13 +439,13 @@
 
         <form id="form-change-credentials">
           <div class="form-group">
-            <label class="form-label" for="inp-current-password">Current Password *</label>
-            <input type="password" id="inp-current-password" class="login-input" required placeholder="Default: chair123">
+            <label class="form-label" for="inp-current-password">Current / Temporary Password *</label>
+            <input type="password" id="inp-current-password" class="login-input" required placeholder="Enter your current password">
           </div>
 
           <div class="form-group">
-            <label class="form-label" for="inp-new-username">New Username (or keep current) *</label>
-            <input type="text" id="inp-new-username" class="login-input" required placeholder="e.g. chair_cpe">
+            <label class="form-label" for="inp-new-username">Username *</label>
+            <input type="text" id="inp-new-username" class="login-input" required placeholder="e.g. DEAN-AAlba, CHAIR-ATullao">
           </div>
 
           <div class="form-group">
@@ -410,9 +458,14 @@
             <input type="password" id="inp-confirm-password" class="login-input" required placeholder="Re-type new password" minlength="6">
           </div>
 
-          <button type="submit" id="btn-save-credentials" class="btn-login-submit" style="background:#059669;">
-            <span>Save &amp; Continue to Dashboard &rarr;</span>
-          </button>
+          <div style="display:flex; gap:10px;">
+            <button type="button" id="btn-cancel-change-cred" class="login-input" style="width:40%; text-align:center; cursor:pointer; background:#F3F4F6; border:1px solid #D1D5DB; font-weight:600;">
+              Cancel
+            </button>
+            <button type="submit" id="btn-save-credentials" class="btn-login-submit" style="width:60%; background:#059669;">
+              <span>Save &amp; Continue &rarr;</span>
+            </button>
+          </div>
         </form>
       </div>
     </div>
@@ -598,6 +651,87 @@
           changeAlert.style.display = "block";
         }
       });
+
+      // Forgot Password Modal Handlers
+      const btnForgotLink = document.getElementById("btn-forgot-password-link");
+      const modalForgot = document.getElementById("modal-forgot-password");
+      const btnCancelForgot = document.getElementById("btn-cancel-forgot");
+      const formForgot = document.getElementById("form-forgot-password");
+      const forgotAlert = document.getElementById("forgot-alert");
+      const inpForgotUser = document.getElementById("inp-forgot-username");
+      const inpForgotReason = document.getElementById("inp-forgot-reason");
+
+      if (btnForgotLink && modalForgot) {
+        btnForgotLink.addEventListener("click", () => {
+          forgotAlert.style.display = "none";
+          // Prefill with current typed login username if available
+          if (inpUser && inpUser.value.trim()) {
+            inpForgotUser.value = inpUser.value.trim();
+          }
+          modalForgot.style.display = "flex";
+        });
+      }
+
+      if (btnCancelForgot && modalForgot) {
+        btnCancelForgot.addEventListener("click", () => {
+          modalForgot.style.display = "none";
+        });
+      }
+
+      if (formForgot) {
+        formForgot.addEventListener("submit", async (e) => {
+          e.preventDefault();
+          const targetUsername = inpForgotUser.value.trim();
+          const targetReason = inpForgotReason.value.trim();
+
+          forgotAlert.textContent = "Submitting reset request to IT Admin...";
+          forgotAlert.className = "login-alert";
+          forgotAlert.style.display = "block";
+          forgotAlert.style.background = "#EFF6FF";
+          forgotAlert.style.color = "#1D4ED8";
+          forgotAlert.style.borderColor = "#BFDBFE";
+
+          try {
+            const res = await fetch("/api/auth/forgot-password", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+              },
+              body: JSON.stringify({
+                username: targetUsername,
+                reason: targetReason
+              })
+            });
+
+            const data = await res.json();
+            if (!res.ok) {
+              forgotAlert.textContent = data.error || "Failed to submit request.";
+              forgotAlert.className = "login-alert error";
+              forgotAlert.style.display = "block";
+              return;
+            }
+
+            forgotAlert.textContent = data.message || "Reset request forwarded to IT Admin!";
+            forgotAlert.className = "login-alert success";
+            forgotAlert.style.display = "block";
+
+            setTimeout(() => {
+              modalForgot.style.display = "none";
+              formForgot.reset();
+              if (alertBox) {
+                alertBox.textContent = `Reset request submitted for '${targetUsername}'. IT Admin has been notified.`;
+                alertBox.className = "login-alert success";
+                alertBox.style.display = "block";
+              }
+            }, 2000);
+          } catch (err) {
+            forgotAlert.textContent = "Error submitting reset request: " + err.message;
+            forgotAlert.className = "login-alert error";
+            forgotAlert.style.display = "block";
+          }
+        });
+      }
     });
   </script>
 </body>

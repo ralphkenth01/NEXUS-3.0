@@ -123,148 +123,39 @@ def seed_database(app=None, stage_demo_schedules: bool = False):
         db.session.flush()
 
         # -------------------------------------------------------------
-        # 4. Seed Realistic BulSU COE Rooms (COE 1 & COE 2 Buildings)
-        # Allocated across the 8 Engineering Departments + GEN Pool
+        # 4. Seed Real BulSU COE Rooms from data-final.sql
         # -------------------------------------------------------------
-        print("[COE SYNC 2026] Seeding department-allocated BulSU COE Rooms (COE 1 & COE 2 Buildings)...")
-        rooms = []
-
-        # Department room assignment mapping for lecture halls
-        coe1_lecture_depts = {
-            101: "CE",
-            102: "CE",
-            103: "EE",
-            104: "EE",
-            105: "MFGE",
-            106: "MFGE",
-            107: "ME",
-        }
-
-        # COE 1 Building: COE 101 - COE 107 (Lecture rooms)
-        for room_num in range(101, 108):
-            code = f"COE {room_num}"
-            cap = 30 if room_num == 104 else 45  # COE 104 has capacity 30 for overcapacity test
-            dept = coe1_lecture_depts.get(room_num, "GEN")
-            rooms.append(
+        raw_dump_rooms = dump_data.get("rooms", [])
+        if raw_dump_rooms:
+            print(f"[COE SYNC 2026] Seeding {len(raw_dump_rooms)} authoritative Rooms from data-final.sql...")
+            rooms = [
                 Room(
-                    room_code=code,
-                    room_type="LECTURE",
-                    capacity=cap,
-                    building="COE 1 Building",
-                    equipment="Multimedia Projector, Whiteboard, Audio System" if room_num != 104 else "Whiteboard, TV Display",
+                    id=r["id"],
+                    room_code=r["room_code"],
+                    room_type=r["room_type"],
+                    capacity=r.get("capacity", 45),
+                    building=r.get("building", "Natividad Hall"),
+                    equipment=r.get("equipment", "Standard Classroom Amenities"),
+                    department=r.get("department", "GEN"),
                     is_available=True,
-                    department=dept,
-                    booked_by_label=None,
                 )
-            )
-
-        # COE 1 Building: Specialized Laboratories
-        coe1_labs = [
-            ("CE Lab", "Civil Engineering Materials & Surveying Station", "CE"),
-            ("EE Lab", "Electrical Machines & Power Systems Trainer", "EE"),
-            ("MFGE Lab", "CNC Lathes, 3D Printers, CAD/CAM Workstations", "MFGE"),
-            ("ME Lab", "Thermodynamics & Fluid Mechanics Apparatus", "ME"),
-            ("Physics Lab", "Optics & Mechanics Experimental Benches", "GEN"),
-            ("Chem Lab", "Fume Hoods, Analytical Balances & Chemistry Benches", "GEN"),
-        ]
-        for lab_code, equip, dept in coe1_labs:
-            rooms.append(
-                Room(
-                    room_code=lab_code,
-                    room_type="LAB",
-                    capacity=40,
-                    building="COE 1 Building",
-                    equipment=equip,
-                    is_available=True,
-                    department=dept,
-                    booked_by_label=None,
+                for r in raw_dump_rooms
+            ]
+        else:
+            print("[COE SYNC 2026] Seeding fallback BulSU COE Rooms...")
+            rooms = []
+            for room_num in range(101, 108):
+                rooms.append(
+                    Room(
+                        room_code=f"COE {room_num}",
+                        room_type="LECTURE",
+                        capacity=45,
+                        building="COE 1 Building",
+                        equipment="Multimedia Projector, Whiteboard",
+                        is_available=True,
+                        department="GEN",
+                    )
                 )
-            )
-
-        # COE 2 Building: COE 2 - 101 to COE 2 - 107
-        coe2_floor1_depts = {
-            101: "ME",
-            102: "CPE",
-            103: "CPE",
-            104: "ECE",
-            105: "ECE",
-            106: "IE",
-            107: "IE",
-        }
-        for room_num in range(101, 108):
-            dept = coe2_floor1_depts.get(room_num, "GEN")
-            rooms.append(
-                Room(
-                    room_code=f"COE 2 - {room_num}",
-                    room_type="LECTURE",
-                    capacity=45,
-                    building="COE 2 Building",
-                    equipment="Smart Display, Whiteboard, Podium",
-                    is_available=True,
-                    department=dept,
-                    booked_by_label=None,
-                )
-            )
-
-        # COE 2 Building: COE 2 - 201 to COE 2 - 206
-        coe2_floor2_depts = {
-            201: "MEE",
-            202: "MEE",
-            203: "GEN",
-            204: "GEN",
-            205: "GEN",
-            206: "GEN",
-        }
-        for room_num in range(201, 207):
-            dept = coe2_floor2_depts.get(room_num, "GEN")
-            rooms.append(
-                Room(
-                    room_code=f"COE 2 - {room_num}",
-                    room_type="LECTURE",
-                    capacity=45,
-                    building="COE 2 Building",
-                    equipment="Multimedia Projector, Whiteboard",
-                    is_available=True,
-                    department=dept,
-                    booked_by_label=None,
-                )
-            )
-
-        # COE 2 Building: COE 2 - 301 to COE 2 - 306 (General COE Lecture Halls)
-        for room_num in range(301, 307):
-            rooms.append(
-                Room(
-                    room_code=f"COE 2 - {room_num}",
-                    room_type="LECTURE",
-                    capacity=45,
-                    building="COE 2 Building",
-                    equipment="Smart TV, Whiteboard, Audio System",
-                    is_available=True,
-                    department="GEN",
-                    booked_by_label=None,
-                )
-            )
-
-        # COE 2 Building: Specialized Laboratories
-        coe2_labs = [
-            ("CPE Lab", "Workstations, Gigabit Switch, Cisco Routers", "CPE"),
-            ("ECE Lab", "Oscilloscopes, Signal Generators, FPGA Kits", "ECE"),
-            ("IE Lab", "Human Factors & Ergonomics Workstations", "IE"),
-            ("MEE Lab", "PLC Automation Trainers, Mechatronics Benches", "MEE"),
-        ]
-        for lab_code, equip, dept in coe2_labs:
-            rooms.append(
-                Room(
-                    room_code=lab_code,
-                    room_type="LAB",
-                    capacity=40,
-                    building="COE 2 Building",
-                    equipment=equip,
-                    is_available=True,
-                    department=dept,
-                    booked_by_label=None,
-                )
-            )
 
         db.session.add_all(rooms)
         db.session.flush()
@@ -294,44 +185,24 @@ def seed_database(app=None, stage_demo_schedules: bool = False):
             for u in dump_data["users"]:
                 uname = u["username"]
                 seeded_usernames.add(uname)
+                user_pwd = u.get("password") or "password"
                 user_objects.append(
                     User(
                         id=u["id"],
                         username=uname,
-                        password_hash=default_pwd_hash,
+                        password_hash=generate_password_hash(user_pwd),
                         role=u["role"],
                         program=u.get("program"),
                         reference_id=u.get("reference_id"),
                         must_change_credentials=False,
                         is_active_status=True,
-                        demo_password="password",
+                        demo_password=user_pwd,
                     )
                 )
 
-        # 5b. Seed Backward-Compatible Aliases (if username not already registered)
+        # 5b. Seed IT Support Team Account (The only system account outside data-final.sql)
         alias_accounts = [
-            ("dean", "DEAN", None, None),
-            ("admin", "ADMIN", None, None),
-            ("chair_cpe", "CHAIR", "CPE", None),
-            ("chair_mee", "CHAIR", "MEE", None),
-            ("chair_ce", "CHAIR", "CE", None),
-            ("chair_ee", "CHAIR", "EE", None),
-            ("chair_ece", "CHAIR", "ECE", None),
-            ("chair_ie", "CHAIR", "IE", None),
-            ("chair_mfge", "CHAIR", "MFGE", None),
-            ("chair_me", "CHAIR", "ME", None),
-            ("chair", "CHAIR", "CPE", None),
-            ("tullao", "FACULTY", "MEE", tullao_fac.id),
-            ("bugayong", "FACULTY", "MEE", bugayong_fac.id),
-            ("roque", "FACULTY", "CE", roque_fac.id),
-            ("faculty", "FACULTY", "CPE", cpe_faculty.id),
-            ("prof_santos", "FACULTY", "CPE", cpe_faculty.id),
-            ("fac_santos", "FACULTY", "CPE", cpe_faculty.id),
-            ("student_mee1a", "STUDENT", "MEE", mee_section.id),
-            ("mayor_mee1a", "STUDENT", "MEE", mee_section.id),
-            ("student_ce1a", "STUDENT", "CE", ce_section.id),
-            ("student", "STUDENT", "CPE", cpe_section.id),
-            ("student_cpe2a", "STUDENT", "CPE", cpe_section.id),
+            ("it_team", "IT", "COE-IT", None),
         ]
 
         for uname, urole, uprog, uref in alias_accounts:
@@ -346,7 +217,7 @@ def seed_database(app=None, stage_demo_schedules: bool = False):
                         reference_id=uref,
                         must_change_credentials=False,
                         is_active_status=True,
-                        demo_password="nexus2026",
+                        demo_password="password",
                     )
                 )
 
@@ -400,9 +271,9 @@ def seed_database(app=None, stage_demo_schedules: bool = False):
         # -------------------------------------------------------------
         # 8. Seed Audit Log Entry
         # -------------------------------------------------------------
-        admin_user = next(u for u in user_objects if u.username == "admin")
+        author_user = next((u for u in user_objects if u.username == "it_team"), user_objects[0])
         audit_entry = AuditLog(
-            user_id=admin_user.id,
+            user_id=author_user.id,
             action="DATABASE_SEEDED",
             details=(
                 f"data-final.sql ingestion complete: {len(faculty_members)} faculty, "
