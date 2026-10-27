@@ -945,4 +945,92 @@ class PasswordResetRequest(db.Model):
         return f"<PasswordResetRequest id={self.id} user='{self.username}' status='{self.status}'>"
 
 
+class Curriculum(db.Model):
+    """
+    Curriculum definition per degree program (e.g. CPE Revised 2024, CPE CMO 87, EE Revised 2024).
+    Enables department-specific curriculum tracks and locked schedule generation.
+    """
+
+    __tablename__ = "curriculum"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    code = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    name = db.Column(db.String(150), nullable=False)
+    program = db.Column(db.String(50), nullable=False, index=True)
+    revision_year = db.Column(db.Integer, nullable=True)
+    cmo_reference = db.Column(db.String(100), nullable=True)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    curriculum_subjects = db.relationship(
+        "CurriculumSubject",
+        backref="curriculum",
+        lazy=True,
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "code": self.code,
+            "name": self.name,
+            "program": self.program,
+            "revision_year": self.revision_year,
+            "cmo_reference": self.cmo_reference,
+            "is_active": self.is_active,
+            "subject_count": len(self.curriculum_subjects) if self.curriculum_subjects else 0,
+        }
+
+    def __repr__(self) -> str:
+        return f"<Curriculum id={self.id} code='{self.code}' prog='{self.program}'>"
+
+
+class CurriculumSubject(db.Model):
+    """
+    Join mapping between a Curriculum and a Subject with term-specific ordering,
+    prerequisites, and corequisites.
+    """
+
+    __tablename__ = "curriculum_subject"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    curriculum_id = db.Column(
+        db.Integer,
+        db.ForeignKey("curriculum.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    subject_id = db.Column(
+        db.Integer,
+        db.ForeignKey("subject.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    year_level = db.Column(db.Integer, nullable=False)
+    semester = db.Column(db.Integer, nullable=False)
+    prerequisites = db.Column(db.String(255), nullable=True)
+    corequisites = db.Column(db.String(255), nullable=True)
+
+    subject = db.relationship("Subject", backref=db.backref("curriculum_entries", lazy=True, cascade="all, delete-orphan"))
+
+    def to_dict(self) -> dict:
+        sub_dict = self.subject.to_dict() if self.subject else {}
+        return {
+            "id": self.id,
+            "curriculum_id": self.curriculum_id,
+            "subject_id": self.subject_id,
+            "year_level": self.year_level,
+            "semester": self.semester,
+            "prerequisites": self.prerequisites,
+            "corequisites": self.corequisites,
+            "subject": sub_dict,
+        }
+
+    def __repr__(self) -> str:
+        return f"<CurriculumSubject curr={self.curriculum_id} sub={self.subject_id} Y{self.year_level}S{self.semester}>"
+
+
+
 

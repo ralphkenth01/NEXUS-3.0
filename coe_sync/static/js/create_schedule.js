@@ -14,6 +14,7 @@ document.addEventListener("DOMContentLoaded", () => {
     allSubjects: [], // { id, code, title, program, units, subject_type, year_level, semester }
     allFaculty: [],  // { id, name, email, program, max_units, current_units }
     allRooms: [],    // { id, room_code, room_type, capacity, is_available }
+    allCurricula: [], // { id, code, name, program, revision_year, cmo_reference }
     activeTab: "smart",
     activeRoomFilter: "ALL", // "ALL" | "LECTURE" | "LAB"
     isGenerating: false,
@@ -28,6 +29,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // DOM Elements - Smart Generate
   const sgProgramSelect = document.getElementById("sg-program");
+  const sgCurriculumSelect = document.getElementById("sg-curriculum");
+  const sgCurriculumBadge = document.getElementById("sg-curriculum-badge");
   const sgYearSelect = document.getElementById("sg-year-level");
   const sgSectionsContainer = document.getElementById("sg-sections-container");
   const sgRoomsContainer = document.getElementById("sg-rooms-container");
@@ -131,17 +134,21 @@ document.addEventListener("DOMContentLoaded", () => {
      ========================================================================= */
   async function loadMasterData() {
     try {
-      const [secRes, roomRes, facRes, subRes] = await Promise.all([
+      const [secRes, roomRes, facRes, subRes, currRes] = await Promise.all([
         fetch("/api/sections").then((r) => r.json()),
         fetch("/api/rooms").then((r) => r.json()),
         fetch("/api/faculty").then((r) => r.json()),
         fetch("/api/subjects").then((r) => r.json()),
+        fetch("/api/curricula").then((r) => r.json()).catch(() => ({ data: [] })),
       ]);
 
       masterState.allSections = secRes.data || secRes || [];
       masterState.allRooms = roomRes.data || roomRes || [];
       masterState.allFaculty = facRes.data || facRes || [];
       masterState.allSubjects = subRes.data || subRes || [];
+      masterState.allCurricula = currRes.data || [];
+      masterState.curriculaLocked = currRes.is_locked || false;
+      masterState.lockedDepartment = currRes.locked_department || null;
 
       // Initialize Smart Generate Controls
       initSmartGenerateControls();
@@ -191,6 +198,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
+    populateSmartCurriculumDropdown();
     renderSmartSectionPills();
     renderSmartRoomCheckboxes();
     populateSmartFacultyDropdown();
@@ -205,9 +213,14 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     sgProgramSelect?.addEventListener("change", () => {
+      populateSmartCurriculumDropdown();
       renderSmartSectionPills();
       populateSmartFacultyDropdown();
       renderSmartLabSubjects();
+      updateLiveSummaryMetrics();
+    });
+
+    sgCurriculumSelect?.addEventListener("change", () => {
       updateLiveSummaryMetrics();
     });
 
@@ -436,6 +449,40 @@ document.addEventListener("DOMContentLoaded", () => {
       card.querySelector(".room-cb")?.addEventListener("change", updateLiveSummaryMetrics);
       sgRoomsContainer.appendChild(card);
     });
+  }
+
+  function populateSmartCurriculumDropdown() {
+    if (!sgCurriculumSelect) return;
+    const selectedProgram = sgProgramSelect ? sgProgramSelect.value : "ALL";
+    const isLocked = masterState.curriculaLocked;
+
+    if (sgCurriculumBadge) {
+      if (isLocked) {
+        sgCurriculumBadge.style.display = "inline-block";
+        sgCurriculumBadge.textContent = `${masterState.lockedDepartment || "Dept"} Locked`;
+      } else {
+        sgCurriculumBadge.style.display = "none";
+      }
+    }
+
+    let filteredCurricula = masterState.allCurricula || [];
+    if (selectedProgram && selectedProgram !== "ALL") {
+      const normP = normalizeProgram(selectedProgram);
+      filteredCurricula = filteredCurricula.filter((c) => normalizeProgram(c.program) === normP);
+    }
+
+    if (filteredCurricula.length === 0) {
+      sgCurriculumSelect.innerHTML = `<option value="">Standard Department Offerings</option>`;
+      return;
+    }
+
+    sgCurriculumSelect.innerHTML = filteredCurricula
+      .map((c, idx) => {
+        const isSelected = idx === 0 ? "selected" : "";
+        const cmo = c.cmo_reference ? ` (${c.cmo_reference})` : "";
+        return `<option value="${c.id}" ${isSelected}>${escapeHtml(c.name)}${escapeHtml(cmo)}</option>`;
+      })
+      .join("");
   }
 
   function populateSmartFacultyDropdown() {
@@ -1046,8 +1093,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const selectedLabCbs = document.querySelectorAll("#sg-lab-subjects-list .sg-lab-cb:checked");
     const splitLabSubjectIds = isLabSplitEnabled ? Array.from(selectedLabCbs).map((cb) => parseInt(cb.value, 10)) : [];
 
+    const selectedCurriculumId = sgCurriculumSelect?.value ? parseInt(sgCurriculumSelect.value, 10) : null;
+
     const payload = {
       program: sgProgramSelect.value,
+      curriculum_id: selectedCurriculumId,
       year_level: sgYearSelect.value === "ALL" ? "all" : parseInt(sgYearSelect.value, 10),
       semester: activeSemester,
       section_ids: sectionIds,

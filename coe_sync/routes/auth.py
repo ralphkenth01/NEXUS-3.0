@@ -211,6 +211,85 @@ def remove_sql_dump_faculty(faculty_id: int, name: str = None) -> bool:
         return False
 
 
+def append_sql_dump_section(section_id: int, section_name: str, dept_full: str, year_level: int) -> bool:
+    """
+    Append a newly created section tuple to the INSERT INTO `coe sections` statement in data-final.sql.
+    """
+    try:
+        sql_path = Path(__file__).resolve().parent.parent / "data-final.sql"
+        if not sql_path.exists():
+            return False
+
+        content = sql_path.read_text(encoding="utf-8")
+        safe_name = section_name.replace("'", "\\'")
+        safe_dept = dept_full.replace("'", "\\'")
+
+        tuple_str = f",({section_id},'{safe_name}','{safe_dept}',{year_level});"
+
+        insert_prefix = "INSERT INTO `coe sections` VALUES ("
+        if insert_prefix in content:
+            lines = content.splitlines(keepends=True)
+            for idx, line in enumerate(lines):
+                if line.startswith(insert_prefix):
+                    trimmed = line.rstrip("\r\n")
+                    if trimmed.endswith(";"):
+                        lines[idx] = trimmed[:-1] + tuple_str + "\n"
+                        sql_path.write_text("".join(lines), encoding="utf-8")
+                        return True
+        return False
+    except Exception as e:
+        print(f"[COE SYNC] Warning: Failed to append section to data-final.sql: {e}")
+        return False
+
+
+def remove_sql_dump_section(section_id: int, section_name: str = None) -> bool:
+    """
+    Remove a section tuple from the INSERT INTO `coe sections` statement in data-final.sql.
+    """
+    try:
+        sql_path = Path(__file__).resolve().parent.parent / "data-final.sql"
+        if not sql_path.exists():
+            return False
+
+        content = sql_path.read_text(encoding="utf-8")
+        # Match ,(\d+,'name',...)
+        p1 = re.compile(rf",\(\s*{section_id}\s*,\s*[^,]+[^\)]*\)")
+        new_content, count = p1.subn("", content)
+        if count == 0:
+            p2 = re.compile(rf"\(\s*{section_id}\s*,\s*[^,]+[^\)]*\),")
+            new_content, count = p2.subn("", content)
+
+        if count > 0:
+            sql_path.write_text(new_content, encoding="utf-8")
+            return True
+        return False
+    except Exception as e:
+        print(f"[COE SYNC] Warning: Failed to remove section #{section_id} from data-final.sql: {e}")
+        return False
+
+
+def update_sql_dump_section_name(section_id: int, new_name: str, dept_full: str = None, year_level: int = None) -> bool:
+    """
+    Update section tuple name in data-final.sql.
+    """
+    try:
+        sql_path = Path(__file__).resolve().parent.parent / "data-final.sql"
+        if not sql_path.exists():
+            return False
+
+        content = sql_path.read_text(encoding="utf-8")
+        safe_new_name = new_name.replace("'", "\\'")
+        
+        # Match (\s*section_id\s*,\s*'[^']*'
+        p = re.compile(rf"(\(\s*{section_id}\s*,\s*')[^']*(')")
+        new_content, count = p.subn(rf"\g<1>{safe_new_name}\g<2>", content)
+        if count > 0:
+            sql_path.write_text(new_content, encoding="utf-8")
+            return True
+        return False
+    except Exception as e:
+        print(f"[COE SYNC] Warning: Failed to update section in data-final.sql: {e}")
+        return False
 
 
 @auth_views.route("/login")

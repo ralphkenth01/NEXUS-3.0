@@ -24,6 +24,16 @@ def resolve_database_uri() -> str:
     if not configured_uri:
         return _default_sqlite_uri
 
+    # Handle PostgreSQL (Supabase / Render)
+    # SQLAlchemy requires 'postgresql://' or 'postgresql+psycopg2://'
+    # Render and Supabase often supply 'postgres://' which is deprecated in SQLAlchemy 1.4+
+    if configured_uri.startswith("postgres://"):
+        configured_uri = configured_uri.replace("postgres://", "postgresql://", 1)
+
+    if configured_uri.startswith("postgresql"):
+        # Supabase and Render PostgreSQL URI
+        return configured_uri
+
     if configured_uri.startswith("mysql"):
         try:
             parsed = urlparse(configured_uri)

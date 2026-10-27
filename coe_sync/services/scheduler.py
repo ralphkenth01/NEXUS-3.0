@@ -20,6 +20,8 @@ from models import (
     FacultySubject,
     AuditLog,
     InterDepartmentRequest,
+    Curriculum,
+    CurriculumSubject,
 )
 from services.conflict_detector import (
     validate_schedule_slot,
@@ -136,6 +138,22 @@ def run_smart_scheduler(config: Dict[str, Any], user_id: Optional[int] = None) -
         faculty_list = Faculty.query.all()
 
     # 4. Resolve Subjects Pool (Only Major Subjects are eligible for Smart Scheduler batch generation)
+    curriculum_id = config.get("curriculum_id")
+    curriculum_obj = None
+    curriculum_subject_map = None
+    if curriculum_id:
+        try:
+            curr_id_int = int(curriculum_id)
+            curriculum_obj = db.session.get(Curriculum, curr_id_int)
+            if curriculum_obj:
+                cs_entries = CurriculumSubject.query.filter_by(curriculum_id=curriculum_obj.id).all()
+                curriculum_subject_map = {
+                    cs.subject_id: (cs.year_level, cs.semester)
+                    for cs in cs_entries
+                }
+        except (ValueError, TypeError):
+            pass
+
     subjects = [s for s in Subject.query.order_by(Subject.units.desc()).all() if s.classification == "MAJOR"]
 
     # Time slots for standard classes (Guaranteed 1-hour lunch break: 12:00 - 13:00)
@@ -262,27 +280,35 @@ def run_smart_scheduler(config: Dict[str, Any], user_id: Optional[int] = None) -
     for sec in sections:
         # Match curriculum: only Major subjects corresponding to this section's program and year level
         sec_p = normalize_prog_code(sec.program)
-        sec_subjects = [
-            sub
-            for sub in subjects
-            if sub.classification == "MAJOR"
-            and (
-                not sub.program
-                or not sec.program
-                or normalize_prog_code(sub.program) == sec_p
-                or normalize_prog_code(sub.program) in ("GEN", "ALL", "COMMON", "COE")
-            )
-            and (
-                not sub.year_level
-                or not sec.year_level
-                or sub.year_level == sec.year_level
-            )
-            and (
-                not sem_int
-                or not sub.semester
-                or sub.semester == sem_int
-            )
-        ]
+        if curriculum_subject_map is not None:
+            sec_subjects = [
+                sub for sub in subjects
+                if sub.id in curriculum_subject_map
+                and (not sec.year_level or curriculum_subject_map[sub.id][0] == sec.year_level)
+                and (not sem_int or curriculum_subject_map[sub.id][1] == sem_int)
+            ]
+        else:
+            sec_subjects = [
+                sub
+                for sub in subjects
+                if sub.classification == "MAJOR"
+                and (
+                    not sub.program
+                    or not sec.program
+                    or normalize_prog_code(sub.program) == sec_p
+                    or normalize_prog_code(sub.program) in ("GEN", "ALL", "COMMON", "COE")
+                )
+                and (
+                    not sub.year_level
+                    or not sec.year_level
+                    or sub.year_level == sec.year_level
+                )
+                and (
+                    not sem_int
+                    or not sub.semester
+                    or sub.semester == sem_int
+                )
+            ]
 
         for sub in sec_subjects:
             # Check if this section already has this subject scheduled

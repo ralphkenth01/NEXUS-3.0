@@ -21,14 +21,22 @@ from models import (
     FacultyAvailability,
     Schedule,
     FacultySubject,
+    Curriculum,
+    CurriculumSubject,
 )
 from routes.auth import (
     require_roles,
+    get_effective_role,
+    get_effective_program,
     generate_faculty_username,
     append_sql_dump_faculty,
     append_sql_dump_user,
     remove_sql_dump_faculty,
     remove_sql_dump_user,
+    append_sql_dump_section,
+    remove_sql_dump_section,
+    update_sql_dump_section_name,
+    update_sql_dump_password,
 )
 
 master_data_bp = Blueprint("master_data", __name__, url_prefix="/api")
@@ -469,7 +477,7 @@ def delete_faculty(faculty_id: int):
 @master_data_bp.route("/sections", methods=["POST"])
 @require_roles("CHAIR", "ADMIN")
 def create_section():
-    """Create a new Cohort Section."""
+    """Create a new Cohort Section with automated User credential generation mirroring Faculty creation."""
     data = request.get_json(silent=True) or {}
     name = str(data.get("name", "")).strip()
     program = str(data.get("program", "BSCpE")).strip()
@@ -496,6 +504,10 @@ def create_section():
 
     class_mayor = str(data.get("class_mayor", "")).strip() or None
 
+    # Check for duplicate section name
+    if Section.query.filter_by(name=name).first():
+        return jsonify({"error": f"Section '{name}' already exists."}), 409
+
     section = Section(
         name=name,
         program=program,
@@ -506,31 +518,102 @@ def create_section():
     db.session.add(section)
     db.session.flush()
 
+    # Department full name mapping for data-final.sql
+    dept_mapping = {
+        "CE": "Civil Engineering",
+        "CPE": "Computer Engineering",
+        "EE": "Electrical Engineering",
+        "ECE": "Electronics Engineering",
+        "IE": "Industrial Engineering",
+        "MFGE": "Manufacturing Engineering",
+        "ME": "Mechanical Engineering",
+        "MEE": "Mechatronics Engineering",
+        "GEN": "General Engineering",
+    }
+    dept_full = dept_mapping.get(section.program, "Computer Engineering")
+
+    # 1. Update data-final.sql `coe sections` table
+    append_sql_dump_section(section.id, section.name, dept_full, section.year_level)
+
+    # 2. Generate User Account for Mayor: credential username is always the section name
+    user_uname = section.name
+    existing_user = User.query.filter_by(username=user_uname).first()
+    default_pwd = "password"
+
+    if existing_user:
+        # Re-link or update reference
+        existing_user.reference_id = section.id
+        existing_user.role = "STUDENT"
+        existing_user.program = section.program
+        user_account = existing_user
+    else:
+        user_account = User(
+            username=user_uname,
+            role="STUDENT",
+            program=section.program,
+            reference_id=section.id,
+            is_active_status=True,
+            must_change_credentials=True,
+        )
+        user_account.set_password(default_pwd)
+        user_account.demo_password = default_pwd
+        db.session.add(user_account)
+        db.session.flush()
+
+    # 3. Update data-final.sql `users` table
+    append_sql_dump_user(
+        user_id=user_account.id,
+        username=user_account.username,
+        password=default_pwd,
+        role="STDN_MYR",
+        dept=dept_full,
+        ref_id=section.id,
+    )
+
     audit = AuditLog(
         user_id=session.get("user_id"),
         action="SECTION_CREATED",
-        details=f"Created section {section.name} ({section.program}, Year {section.year_level}).",
+        details=f"Created section {section.name} ({section.program}, Year {section.year_level}, Mayor: {section.mayor_name}) and user account '{user_uname}'.",
     )
     db.session.add(audit)
     db.session.commit()
 
-    return jsonify({"status": "success", "message": "Section created successfully.", "data": section.to_dict()}), 201
+    sec_dict = section.to_dict()
+    sec_dict["user_account"] = {
+        "id": user_account.id,
+        "username": user_account.username,
+        "role": user_account.role,
+    }
+
+    return jsonify({
+        "status": "success",
+        "message": f"Section '{section.name}' and Class Mayor account '{user_uname}' created successfully.",
+        "data": sec_dict,
+    }), 201
 
 
 @master_data_bp.route("/sections/<int:section_id>", methods=["PUT"])
 @require_roles("CHAIR", "ADMIN")
 def update_section(section_id: int):
-    """Update an existing Cohort Section."""
+    """Update an existing Cohort Section and synchronize Class Mayor name and username."""
     section = db.session.get(Section, section_id)
     if not section:
         return jsonify({"error": f"Section #{section_id} not found."}), 404
 
     data = request.get_json(silent=True) or {}
+    old_sec_name = section.name
+    name_changed = False
+
     if "name" in data:
         name = str(data["name"]).strip()
         if not name:
             return jsonify({"error": "Section name cannot be empty."}), 400
-        section.name = name
+        existing = Section.query.filter_by(name=name).first()
+        if existing and existing.id != section.id:
+            return jsonify({"error": f"Section name '{name}' is already taken."}), 409
+        if name != old_sec_name:
+            name_changed = True
+            section.name = name
 
     if "program" in data:
         p = str(data["program"]).strip()
@@ -563,10 +646,72 @@ def update_section(section_id: int):
             except (ValueError, TypeError):
                 pass
 
+    dept_mapping = {
+        "CE": "Civil Engineering",
+        "CPE": "Computer Engineering",
+        "EE": "Electrical Engineering",
+        "ECE": "Electronics Engineering",
+        "IE": "Industrial Engineering",
+        "MFGE": "Manufacturing Engineering",
+        "ME": "Mechanical Engineering",
+        "MEE": "Mechatronics Engineering",
+        "GEN": "General Engineering",
+    }
+    dept_full = dept_mapping.get(section.program, "Computer Engineering")
+
+    # Update section in data-final.sql if name changed
+    if name_changed:
+        update_sql_dump_section_name(section.id, section.name, dept_full, section.year_level)
+
+    # Find associated mayor user account (role STUDENT / STDN_MYR, ref_id == section.id or username == old_sec_name)
+    linked_user = User.query.filter(
+        User.reference_id == section.id,
+        User.role.in_(["STUDENT", "STDN_MYR"])
+    ).first()
+    if not linked_user:
+        linked_user = User.query.filter_by(username=old_sec_name).first()
+
+    if linked_user:
+        # Username is always their section name
+        if linked_user.username != section.name:
+            prev_uname = linked_user.username
+            linked_user.username = section.name
+            linked_user.program = section.program
+            linked_user.reference_id = section.id
+            update_sql_dump_password(
+                username=section.name,
+                new_password=linked_user.demo_password or "password",
+                old_username=prev_uname,
+            )
+    else:
+        # Create user account for section if not yet existing
+        default_pwd = "password"
+        user_uname = section.name
+        new_u = User(
+            username=user_uname,
+            role="STUDENT",
+            program=section.program,
+            reference_id=section.id,
+            is_active_status=True,
+            must_change_credentials=True,
+        )
+        new_u.set_password(default_pwd)
+        new_u.demo_password = default_pwd
+        db.session.add(new_u)
+        db.session.flush()
+        append_sql_dump_user(
+            user_id=new_u.id,
+            username=new_u.username,
+            password=default_pwd,
+            role="STDN_MYR",
+            dept=dept_full,
+            ref_id=section.id,
+        )
+
     audit = AuditLog(
         user_id=session.get("user_id"),
         action="SECTION_UPDATED",
-        details=f"Updated section #{section.id} ({section.name}).",
+        details=f"Updated section #{section.id} ({section.name}, Mayor: {section.mayor_name}).",
     )
     db.session.add(audit)
     db.session.commit()
@@ -577,23 +722,40 @@ def update_section(section_id: int):
 @master_data_bp.route("/sections/<int:section_id>", methods=["DELETE"])
 @require_roles("CHAIR", "ADMIN")
 def delete_section(section_id: int):
-    """Delete a Cohort Section."""
+    """Delete a Cohort Section and linked Class Mayor account."""
     section = db.session.get(Section, section_id)
     if not section:
         return jsonify({"error": f"Section #{section_id} not found."}), 404
 
     name = section.name
+    
+    # 1. Remove from data-final.sql `coe sections`
+    remove_sql_dump_section(section.id, name)
+
+    # 2. Look up and remove linked User account
+    linked_user = User.query.filter(
+        User.reference_id == section.id,
+        User.role.in_(["STUDENT", "STDN_MYR"])
+    ).first()
+    if not linked_user:
+        linked_user = User.query.filter_by(username=name).first()
+
+    if linked_user:
+        remove_sql_dump_user(linked_user.username)
+        db.session.delete(linked_user)
+
     db.session.delete(section)
 
     audit = AuditLog(
         user_id=session.get("user_id"),
         action="SECTION_DELETED",
-        details=f"Deleted section {name} (#{section_id}).",
+        details=f"Deleted section {name} (#{section_id}) and linked user account.",
     )
     db.session.add(audit)
     db.session.commit()
 
     return jsonify({"status": "success", "message": f"Section '{name}' deleted successfully."}), 200
+
 
 
 # -----------------------------------------------------------------
@@ -1190,5 +1352,94 @@ def unassign_subject_from_faculty(faculty_id: int):
         "message": f"Successfully unassigned {subj_code} from {faculty.name}.",
         "data": faculty.to_dict(),
     }), 200
+
+
+# -----------------------------------------------------------------
+# CURRICULA & CURRICULUM SUBJECTS (DEPARTMENT-LOCKED)
+# -----------------------------------------------------------------
+@master_data_bp.route("/curricula", methods=["GET"])
+def list_curricula():
+    """
+    GET /api/curricula
+    Retrieve curricula tracks.
+    Locks curricula list based on department for Program Chairs.
+    """
+    from services.scheduler import normalize_prog_code
+    from seed_curricula import ensure_curriculum_master_data
+
+    # Ensure curricula table is populated
+    if Curriculum.query.count() == 0:
+        ensure_curriculum_master_data()
+
+    effective_role = get_effective_role()
+    effective_prog = get_effective_program()
+    req_prog = request.args.get("program", "").strip().upper()
+
+    query = Curriculum.query.filter_by(is_active=True)
+
+    # Department locking for Program Chairs
+    is_chair = effective_role in ("CHAIR", "PROG_CHA")
+    locked_department = None
+    if is_chair and effective_prog and effective_prog != "ALL":
+        norm_chair_prog = normalize_prog_code(effective_prog)
+        query = query.filter(Curriculum.program == norm_chair_prog)
+        locked_department = norm_chair_prog
+    elif req_prog and req_prog != "ALL":
+        norm_req = normalize_prog_code(req_prog)
+        query = query.filter(Curriculum.program == norm_req)
+
+    curricula = query.order_by(Curriculum.program.asc(), Curriculum.revision_year.desc()).all()
+
+    return jsonify({
+        "status": "success",
+        "count": len(curricula),
+        "is_locked": bool(locked_department),
+        "locked_department": locked_department,
+        "data": [c.to_dict() for c in curricula],
+    }), 200
+
+
+@master_data_bp.route("/curricula/<int:curriculum_id>/subjects", methods=["GET"])
+def get_curriculum_subjects(curriculum_id: int):
+    """
+    GET /api/curricula/<id>/subjects
+    Retrieve subjects in a curriculum, organized by year level and semester.
+    Enforces department access validation for Chairs.
+    """
+    from services.scheduler import normalize_prog_code
+
+    curr = db.session.get(Curriculum, curriculum_id)
+    if not curr:
+        return jsonify({"status": "error", "message": "Curriculum not found."}), 404
+
+    effective_role = get_effective_role()
+    effective_prog = get_effective_program()
+    if effective_role in ("CHAIR", "PROG_CHA") and effective_prog and effective_prog != "ALL":
+        if normalize_prog_code(curr.program) != normalize_prog_code(effective_prog):
+            return jsonify({
+                "status": "error",
+                "message": f"Unauthorized: You can only view curricula for your department ({effective_prog})."
+            }), 403
+
+    year_level = request.args.get("year_level", type=int)
+    semester = request.args.get("semester", type=int)
+
+    query = CurriculumSubject.query.filter_by(curriculum_id=curriculum_id)
+    if year_level:
+        query = query.filter_by(year_level=year_level)
+    if semester:
+        query = query.filter_by(semester=semester)
+
+    entries = query.all()
+    # Sort by year level, semester, subject code
+    entries_sorted = sorted(entries, key=lambda e: (e.year_level, e.semester, (e.subject.code if e.subject else "")))
+
+    return jsonify({
+        "status": "success",
+        "curriculum": curr.to_dict(),
+        "count": len(entries_sorted),
+        "data": [e.to_dict() for e in entries_sorted],
+    }), 200
+
 
 

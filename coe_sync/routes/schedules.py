@@ -876,6 +876,15 @@ def api_smart_generate_schedule():
     effective_prog = get_effective_program()
     if effective_role in ("CHAIR", "PROG_CHA") and effective_prog:
         payload["program"] = effective_prog
+        curr_id = payload.get("curriculum_id")
+        if curr_id:
+            from models import Curriculum
+            curr = db.session.get(Curriculum, int(curr_id))
+            if curr and normalize_prog_code(curr.program) != normalize_prog_code(effective_prog):
+                return jsonify({
+                    "status": "error",
+                    "message": f"Unauthorized: As {effective_prog} Program Chair, you can only generate schedules with {effective_prog} curricula.",
+                }), 403
 
     result = run_smart_scheduler(payload, user_id=user_id)
     if result.get("status") == "error":

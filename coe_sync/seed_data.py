@@ -269,7 +269,14 @@ def seed_database(app=None, stage_demo_schedules: bool = False):
             db.session.flush()
 
         # -------------------------------------------------------------
-        # 8. Seed Audit Log Entry
+        # 8. Seed Official Department Curricula Tracks
+        # -------------------------------------------------------------
+        from seed_curricula import ensure_curriculum_master_data
+        print("[COE SYNC 2026] Seeding official Department Curricula and mappings...")
+        ensure_curriculum_master_data()
+
+        # -------------------------------------------------------------
+        # 9. Seed Audit Log Entry
         # -------------------------------------------------------------
         author_user = next((u for u in user_objects if u.username == "it_team"), user_objects[0])
         audit_entry = AuditLog(

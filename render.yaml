@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: nexus-coe-sync
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn run:app
+    plan: free
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: SECRET_KEY
+        generateValue: true
+      - key: SHOW_DEMO_CREDENTIALS
+        value: "true"
+      - key: DATABASE_URL
+        sync: false

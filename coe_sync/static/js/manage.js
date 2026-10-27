@@ -588,6 +588,11 @@ function renderSectionsTable(sections) {
         </div>
       </td>
       <td>
+        <span style="font-family: monospace; font-size: 11.5px; font-weight: 700; color: #1e40af; background: #eff6ff; border: 1px solid #bfdbfe; padding: 3px 8px; border-radius: 6px;">
+          ${escapeHtml(s.name)}
+        </span>
+      </td>
+      <td>
         <div class="table-actions">
           <a href="/schedules?section=${s.id}" class="btn btn-secondary btn-sm" style="display:inline-flex; align-items:center; gap:4px; text-decoration:none;" title="View Section Timetable">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
@@ -862,17 +867,30 @@ function buildModalForm(entity, data = null) {
         <input class="form-input" type="number" id="inp-max-units" name="max_units" min="1" max="40" required placeholder="Default 21" value="${data ? data.max_units : "21"}">
         <span class="form-error" id="err-max_units"></span>
       </div>
+      <div style="background: rgba(104,28,46,0.05); border: 1px solid rgba(104,28,46,0.15); border-radius: 6px; padding: 8px 12px; font-size: 11.5px; color: var(--bulsu-maroon, #681C2E);">
+        ✨ <strong>Automation:</strong> Linked Faculty user account (starting with <code>FAC-</code>) and database records are generated automatically.
+      </div>
     `;
   } else if (entity === "sections") {
     container.innerHTML = `
       <div class="form-field">
         <label class="form-label" for="inp-sec-name">Section Identifier *</label>
-        <input class="form-input" id="inp-sec-name" name="name" required placeholder="e.g. CpE 2A" value="${data ? escapeHtml(data.name) : ""}">
+        <input class="form-input" id="inp-sec-name" name="name" required placeholder="e.g. MEE - 1A" value="${data ? escapeHtml(data.name) : ""}" oninput="const p = document.getElementById('inp-mayor-username-preview'); if(p) p.value = this.value.trim() || 'Section Name';">
         <span class="form-error" id="err-name"></span>
       </div>
       <div class="form-field">
         <label class="form-label" for="inp-sec-prog">Degree Program *</label>
-        <input class="form-input" id="inp-sec-prog" name="program" required placeholder="e.g. BSCpE" value="${data ? escapeHtml(data.program) : "BSCpE"}">
+        <select class="form-select" id="inp-sec-prog" name="program">
+          <option value="MEE" ${!data || data.program === "MEE" ? "selected" : ""}>Mechatronics Engineering (MEE)</option>
+          <option value="CE" ${data && data.program === "CE" ? "selected" : ""}>Civil Engineering (CE)</option>
+          <option value="CPE" ${data && data.program === "CPE" ? "selected" : ""}>Computer Engineering (CPE)</option>
+          <option value="EE" ${data && data.program === "EE" ? "selected" : ""}>Electrical Engineering (EE)</option>
+          <option value="ECE" ${data && data.program === "ECE" ? "selected" : ""}>Electronics Engineering (ECE)</option>
+          <option value="IE" ${data && data.program === "IE" ? "selected" : ""}>Industrial Engineering (IE)</option>
+          <option value="MFGE" ${data && data.program === "MFGE" ? "selected" : ""}>Manufacturing Engineering (MFGE)</option>
+          <option value="ME" ${data && data.program === "ME" ? "selected" : ""}>Mechanical Engineering (ME)</option>
+          <option value="GEN" ${data && data.program === "GEN" ? "selected" : ""}>General Engineering (GEN)</option>
+        </select>
       </div>
       <div class="form-field">
         <label class="form-label" for="inp-year-level">Year Level *</label>
@@ -884,8 +902,18 @@ function buildModalForm(entity, data = null) {
         </select>
       </div>
       <div class="form-field">
-        <label class="form-label" for="inp-class-mayor">Class Mayor</label>
-        <input class="form-input" id="inp-class-mayor" name="class_mayor" placeholder="e.g. Juan Dela Cruz" value="${data && data.class_mayor ? escapeHtml(data.class_mayor) : ""}">
+        <label class="form-label" for="inp-class-mayor">Class Mayor Name</label>
+        <input class="form-input" id="inp-class-mayor" name="class_mayor" placeholder="e.g. Ian M. De Jesus" value="${data && data.class_mayor ? escapeHtml(data.class_mayor) : ""}">
+      </div>
+      <div class="form-field">
+        <label class="form-label">Mayor Credential Username</label>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <input class="form-input" id="inp-mayor-username-preview" readonly disabled style="background:#f1f5f9; color:#1e293b; font-family:monospace; font-weight:700;" value="${data ? escapeHtml(data.name) : "Section Name"}">
+          <span style="font-size:11px; color:#64748b; white-space:nowrap;">(Always matches Section Name)</span>
+        </div>
+      </div>
+      <div style="background: rgba(37,99,235,0.06); border: 1px solid rgba(37,99,235,0.18); border-radius: 6px; padding: 8px 12px; font-size: 11.5px; color: #1e40af;">
+        ✨ <strong>Automation:</strong> Class Mayor user credentials will be automatically registered in the system and synchronized to the database.
       </div>
     `;
   } else if (entity === "subjects") {
