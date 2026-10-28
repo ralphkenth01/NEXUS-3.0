@@ -86,6 +86,7 @@ function initConflictAlertPill() {
 
 window.updateGlobalAlertPill = async function () {
   const pillText = document.getElementById("conflict-alert-text");
+  const dot = document.getElementById("conflict-dot");
   if (!pillText) return;
 
   try {
@@ -93,6 +94,9 @@ window.updateGlobalAlertPill = async function () {
     if (res && res.status === "success") {
       const count = res.data?.unresolved_conflicts || 0;
       pillText.textContent = `${count} Alert${count === 1 ? "" : "s"}`;
+      if (dot) {
+        dot.style.background = count > 0 ? "#EF4444" : "#10B981";
+      }
     }
   } catch (e) {
     // Soft ignore
@@ -1180,6 +1184,16 @@ document.addEventListener("DOMContentLoaded", () => {
   initReschedulePipeline();
   initCredentialsManagement();
   initSeedButton();
+
+  // Initial fetch for realtime counters
+  updateGlobalAlertPill();
+  updateRequestsInbox();
+
+  // Periodic realtime polling every 10 seconds
+  setInterval(() => {
+    updateGlobalAlertPill();
+    updateRequestsInbox();
+  }, 10000);
 });
 
 

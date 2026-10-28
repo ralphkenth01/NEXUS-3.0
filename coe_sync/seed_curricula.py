@@ -192,7 +192,10 @@ ADDITIONAL_CURRICULUM_SUBJECTS = [
     {"code": "MEE 408L", "title": "Industrial Data Communication and Network System", "program": "MEE", "units": 1, "hours_per_week": 3, "subject_type": "LAB", "year_level": 4, "semester": 1},
     {"code": "MEE 412", "title": "Machine Vision System and Design", "program": "MEE", "units": 1, "hours_per_week": 1, "subject_type": "LECTURE", "year_level": 4, "semester": 2},
     {"code": "MEE 413", "title": "SCADA and HMI", "program": "MEE", "units": 3, "hours_per_week": 3, "subject_type": "LECTURE", "year_level": 4, "semester": 2},
+    {"code": "MEE 417", "title": "Environmental Engineering", "program": "MEE", "units": 3, "hours_per_week": 3, "subject_type": "LECTURE", "year_level": 4, "semester": 1},
+    {"code": "MEE 314", "title": "Materials Science and Engineering", "program": "MEE", "units": 2, "hours_per_week": 2, "subject_type": "LECTURE", "year_level": 3, "semester": 1},
     {"code": "CIV 316", "title": "Earthquake Engineering (Design)", "program": "CE", "units": 1, "hours_per_week": 3, "subject_type": "LAB", "year_level": 3, "semester": 2},
+    {"code": "CIV 410-TrE", "title": "Transportation Engineering Specialization", "program": "CE", "units": 3, "hours_per_week": 3, "subject_type": "LECTURE", "year_level": 4, "semester": 1},
     # Manufacturing Engineering (MFE) Specific Subjects
     {"code": "MFE 101", "title": "Introduction to Manufacturing Engineering", "program": "MFGE", "units": 2, "hours_per_week": 2, "subject_type": "LECTURE", "year_level": 1, "semester": 2},
     {"code": "MFE 102", "title": "Workshop Theory and Practices", "program": "MFGE", "units": 1, "hours_per_week": 3, "subject_type": "LAB", "year_level": 1, "semester": 2},
@@ -2301,13 +2304,16 @@ def ensure_curriculum_master_data():
         # If explicit mappings provided, populate CurriculumSubject
         mappings = curr_info.get("mappings")
         if mappings:
-            # Check existing mappings
             existing_sub_ids = {cs.subject_id for cs in curr.curriculum_subjects}
+            all_clean = {"".join(k.split()).upper(): s for k, s in all_subjects.items()}
             for scode, yr, sem, prereq, coreq in mappings:
                 sub = all_subjects.get(scode)
                 if not sub:
                     # Try with or without trailing L
                     sub = all_subjects.get(scode + "L") or all_subjects.get(scode.rstrip("L"))
+                if not sub:
+                    clean = "".join(scode.split()).upper()
+                    sub = all_clean.get(clean) or all_clean.get(clean + "L") or all_clean.get(clean.rstrip("L"))
                 if sub and sub.id not in existing_sub_ids:
                     cs = CurriculumSubject(
                         curriculum_id=curr.id,
@@ -2335,6 +2341,15 @@ def ensure_curriculum_master_data():
                     )
                     db.session.add(cs)
                     existing_sub_ids.add(s.id)
+
+    # 3. Synchronize Subject catalog year_level & semester to match official active curricula
+    # Prioritizes latest curricula (e.g. 2024 revised) so the subject catalog accurately reflects official terms
+    active_currs = Curriculum.query.filter_by(is_active=True).order_by(Curriculum.revision_year.asc(), Curriculum.id.asc()).all()
+    for c in active_currs:
+        for cs in c.curriculum_subjects:
+            if cs.subject and (cs.subject.year_level != cs.year_level or cs.subject.semester != cs.semester):
+                cs.subject.year_level = cs.year_level
+                cs.subject.semester = cs.semester
 
     db.session.commit()
     print("[COE SYNC 2026] Curriculum Master Data successfully synchronized.")

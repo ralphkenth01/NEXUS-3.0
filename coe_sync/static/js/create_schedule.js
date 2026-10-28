@@ -15,6 +15,7 @@ document.addEventListener("DOMContentLoaded", () => {
     allFaculty: [],  // { id, name, email, program, max_units, current_units }
     allRooms: [],    // { id, room_code, room_type, capacity, is_available }
     allCurricula: [], // { id, code, name, program, revision_year, cmo_reference }
+    curriculumSubjectsCache: {}, // { [curriculum_id]: [ { subject_id, year_level, semester, subject: {...} } ] }
     activeTab: "smart",
     activeRoomFilter: "ALL", // "ALL" | "LECTURE" | "LAB"
     isGenerating: false,
@@ -156,6 +157,9 @@ document.addEventListener("DOMContentLoaded", () => {
       // Initialize Manual Scheduling Controls
       initManualSchedulingControls();
 
+      // Pre-fetch active curriculum subjects for accurate live summary counts
+      await fetchActiveCurriculumSubjects();
+
       // Update initial summary numbers
       updateLiveSummaryMetrics();
     } catch (err) {
@@ -209,18 +213,32 @@ document.addEventListener("DOMContentLoaded", () => {
       sgSemesterSelect.addEventListener("change", (e) => {
         localStorage.setItem("coe_sync_active_term", e.target.value);
         window.dispatchEvent(new CustomEvent("academicTermChanged", { detail: { term: e.target.value } }));
+        renderSmartLabSubjects();
+        updateLiveSummaryMetrics();
       });
     }
 
-    sgProgramSelect?.addEventListener("change", () => {
-      populateSmartCurriculumDropdown();
-      renderSmartSectionPills();
-      populateSmartFacultyDropdown();
+    window.addEventListener("academicTermChanged", (e) => {
+      const term = e.detail?.term || localStorage.getItem("coe_sync_active_term") || "1";
+      if (sgSemesterSelect && sgSemesterSelect.value !== term) {
+        sgSemesterSelect.value = term;
+      }
       renderSmartLabSubjects();
       updateLiveSummaryMetrics();
     });
 
-    sgCurriculumSelect?.addEventListener("change", () => {
+    sgProgramSelect?.addEventListener("change", async () => {
+      populateSmartCurriculumDropdown();
+      renderSmartSectionPills();
+      populateSmartFacultyDropdown();
+      await fetchActiveCurriculumSubjects();
+      renderSmartLabSubjects();
+      updateLiveSummaryMetrics();
+    });
+
+    sgCurriculumSelect?.addEventListener("change", async () => {
+      await fetchActiveCurriculumSubjects();
+      renderSmartLabSubjects();
       updateLiveSummaryMetrics();
     });
 
@@ -306,43 +324,73 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const selectedProgram = sgProgramSelect ? sgProgramSelect.value : "ALL";
     const selectedYear = sgYearSelect ? sgYearSelect.value : "ALL";
+    const sgSemesterSelect = document.getElementById("sg-semester");
+    const activeSemester = sgSemesterSelect ? sgSemesterSelect.value : (localStorage.getItem("coe_sync_active_term") || "1");
 
-    // Gather eligible LAB subjects
+    // Gather eligible LAB subjects from active curriculum if available, otherwise from master catalog
+    const currId = sgCurriculumSelect?.value;
+    const currEntries = currId ? (masterState.curriculumSubjectsCache[currId] || []) : [];
+
     const labSubjectsMap = new Map();
-    masterState.allSubjects.forEach((sub) => {
-      const subType = String(sub.subject_type || sub.type || "LECTURE").toUpperCase();
-      const code = String(sub.code || "").toUpperCase();
-      const isLab = subType.includes("LAB") || code.endsWith("L") || code.endsWith("D") || code.endsWith("F");
-      if (!isLab) return;
+    if (currEntries.length > 0) {
+      currEntries.forEach((entry) => {
+        const sub = entry.subject || {};
+        if (!sub.id) return;
+        const subType = String(sub.subject_type || sub.type || "LECTURE").toUpperCase();
+        const code = String(sub.code || "").toUpperCase();
+        const isLab = subType.includes("LAB") || code.endsWith("L") || code.endsWith("D") || code.endsWith("F");
+        if (!isLab) return;
 
-      const normProg = normalizeProgram(sub.program);
-      const selProg = normalizeProgram(selectedProgram);
+        if (selectedYear !== "ALL" && String(entry.year_level) !== String(selectedYear)) {
+          return;
+        }
+        if (activeSemester && entry.semester && String(entry.semester) !== String(activeSemester)) {
+          return;
+        }
+        if (selectedSecObjs.length > 0) {
+          const matchesSec = selectedSecObjs.some((sec) => !entry.year_level || entry.year_level === sec.year_level);
+          if (!matchesSec) return;
+        }
+        labSubjectsMap.set(sub.id, sub);
+      });
+    } else {
+      masterState.allSubjects.forEach((sub) => {
+        const subType = String(sub.subject_type || sub.type || "LECTURE").toUpperCase();
+        const code = String(sub.code || "").toUpperCase();
+        const isLab = subType.includes("LAB") || code.endsWith("L") || code.endsWith("D") || code.endsWith("F");
+        if (!isLab) return;
 
-      if (selectedProgram !== "ALL" && normProg !== selProg && normProg !== "GEN") {
-        return;
-      }
-      if (selectedYear !== "ALL" && String(sub.year_level) !== String(selectedYear)) {
-        return;
-      }
+        const normProg = normalizeProgram(sub.program);
+        const selProg = normalizeProgram(selectedProgram);
 
-      // If specific sections are selected, ensure subject matches at least one selected cohort's program
-      if (selectedSecObjs.length > 0) {
-        const matchesSection = selectedSecObjs.some((sec) => {
-          const secProg = normalizeProgram(sec.program);
-          const progMatch = (normProg === "GEN" || normProg === secProg);
-          const yearMatch = !sub.year_level || String(sub.year_level) === String(sec.year_level);
-          return progMatch && yearMatch;
-        });
-        if (!matchesSection) return;
-      }
+        if (selectedProgram !== "ALL" && normProg !== selProg && normProg !== "GEN") {
+          return;
+        }
+        if (selectedYear !== "ALL" && String(sub.year_level) !== String(selectedYear)) {
+          return;
+        }
+        if (activeSemester && sub.semester && String(sub.semester) !== String(activeSemester)) {
+          return;
+        }
 
-      labSubjectsMap.set(sub.id, sub);
-    });
+        if (selectedSecObjs.length > 0) {
+          const matchesSection = selectedSecObjs.some((sec) => {
+            const secProg = normalizeProgram(sec.program);
+            const progMatch = (normProg === "GEN" || normProg === secProg);
+            const yearMatch = !sub.year_level || String(sub.year_level) === String(sec.year_level);
+            return progMatch && yearMatch;
+          });
+          if (!matchesSection) return;
+        }
+
+        labSubjectsMap.set(sub.id, sub);
+      });
+    }
 
     const labSubjects = Array.from(labSubjectsMap.values());
 
     if (labSubjects.length === 0) {
-      labListContainer.innerHTML = `<span class="empty-hint" style="text-align: center; padding: 14px; font-size: 12px; color: var(--text-muted);">No laboratory subjects found in the selected program/cohorts.</span>`;
+      labListContainer.innerHTML = `<span class="empty-hint" style="text-align: center; padding: 14px; font-size: 12px; color: var(--text-muted);">No laboratory subjects found in the selected program/cohorts for Term ${activeSemester}.</span>`;
       return;
     }
 
@@ -504,6 +552,25 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  async function fetchActiveCurriculumSubjects() {
+    const currId = sgCurriculumSelect?.value;
+    if (!currId) return [];
+    if (masterState.curriculumSubjectsCache[currId]) {
+      return masterState.curriculumSubjectsCache[currId];
+    }
+    try {
+      const res = await fetch(`/api/curricula/${currId}/subjects`);
+      if (res.ok) {
+        const json = await res.json();
+        masterState.curriculumSubjectsCache[currId] = json.data || [];
+        return masterState.curriculumSubjectsCache[currId];
+      }
+    } catch (e) {
+      console.warn("Failed fetching curriculum subjects for curr", currId, e);
+    }
+    return [];
+  }
+
   function updateLiveSummaryMetrics() {
     // 1. Target sections count
     const activePills = sgSectionsContainer?.querySelectorAll(".section-pill.selected") || [];
@@ -513,27 +580,52 @@ document.addEventListener("DOMContentLoaded", () => {
     // 2. Total subjects to schedule
     const selectedSecIds = Array.from(activePills).map((p) => parseInt(p.dataset.id, 10));
     const selectedSecObjs = masterState.allSections.filter((s) => selectedSecIds.includes(s.id));
+    const sgSemesterSelect = document.getElementById("sg-semester");
+    const activeSemester = parseInt(sgSemesterSelect ? sgSemesterSelect.value : (localStorage.getItem("coe_sync_active_term") || "1"), 10);
 
-    // Calculate unique curriculum subjects corresponding to the selected sections
+    const currId = sgCurriculumSelect?.value;
+    const currEntries = currId ? (masterState.curriculumSubjectsCache[currId] || []) : [];
+
     let totalSubjects = 0;
     const countedKeys = new Set();
     selectedSecObjs.forEach((sec) => {
-      const normProg = normalizeProgram(sec.program);
-      const matchingSubs = masterState.allSubjects.filter((sub) => {
-        const subProg = normalizeProgram(sub.program);
-        const matchProg = !subProg || subProg === normProg;
-        const matchYr = !sub.year_level || String(sub.year_level) === String(sec.year_level);
-        const isMajor = (sub.classification || "MAJOR") === "MAJOR";
-        return matchProg && matchYr && isMajor;
-      });
+      if (currEntries.length > 0) {
+        // Use exact curriculum mappings
+        const matchingEntries = currEntries.filter((e) => {
+          const matchYr = !e.year_level || e.year_level === sec.year_level;
+          const matchSem = !activeSemester || !e.semester || e.semester === activeSemester;
+          const sub = e.subject || {};
+          const isMajor = (sub.classification || "MAJOR") === "MAJOR";
+          return matchYr && matchSem && isMajor;
+        });
 
-      matchingSubs.forEach((sub) => {
-        const key = `${sec.id}-${sub.id}`;
-        if (!countedKeys.has(key)) {
-          countedKeys.add(key);
-          totalSubjects++;
-        }
-      });
+        matchingEntries.forEach((entry) => {
+          const key = `${sec.id}-${entry.subject_id}`;
+          if (!countedKeys.has(key)) {
+            countedKeys.add(key);
+            totalSubjects++;
+          }
+        });
+      } else {
+        // Fallback to subject catalog
+        const normProg = normalizeProgram(sec.program);
+        const matchingSubs = masterState.allSubjects.filter((sub) => {
+          const subProg = normalizeProgram(sub.program);
+          const matchProg = !subProg || subProg === normProg || ["GEN", "COE", "ALL"].includes(subProg);
+          const matchYr = !sub.year_level || String(sub.year_level) === String(sec.year_level);
+          const matchSem = !activeSemester || !sub.semester || String(sub.semester) === String(activeSemester);
+          const isMajor = (sub.classification || "MAJOR") === "MAJOR";
+          return matchProg && matchYr && matchSem && isMajor;
+        });
+
+        matchingSubs.forEach((sub) => {
+          const key = `${sec.id}-${sub.id}`;
+          if (!countedKeys.has(key)) {
+            countedKeys.add(key);
+            totalSubjects++;
+          }
+        });
+      }
     });
 
     // Fallback if curriculum mapping is sparse: estimate 6 subjects per cohort
@@ -830,6 +922,11 @@ document.addEventListener("DOMContentLoaded", () => {
       manualSectionMeta.innerHTML = `
         <span><strong>Cohort:</strong> ${escapeHtml(sec.program)} Year ${sec.year_level} (${escapeHtml(sec.name)})</span>
       `;
+      // Auto-synchronize year level and refine subject offerings to section's year and active semester
+      if (manualYearLevel && String(manualYearLevel.value) !== String(sec.year_level)) {
+        manualYearLevel.value = String(sec.year_level);
+        cascadeManualFilters();
+      }
     } else if (manualSectionMeta) {
       manualSectionMeta.style.display = "none";
       manualSectionMeta.innerHTML = "";

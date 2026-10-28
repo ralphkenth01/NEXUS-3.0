@@ -256,19 +256,20 @@ class Subject(db.Model):
     @property
     def computed_year_level(self) -> int:
         """
-        Derive year level from course code:
-        100s -> 1st Year (e.g. MEE 101, COE 100)
-        200s -> 2nd Year (e.g. MEE 201, COE 200)
-        300s -> 3rd Year (e.g. MEE 300, MEE 301)
-        400s -> 4th Year (e.g. MEE 400, MEE 401)
-        Falls back to self.year_level or 1.
+        Derive year level:
+        1. Prioritize explicit self.year_level (from official curriculum/database) if between 1 and 4.
+        2. Fall back to course code number inference:
+           100s -> 1st Year, 200s -> 2nd Year, 300s -> 3rd Year, 400s -> 4th Year.
+        3. Default to 1.
         """
+        if self.year_level and 1 <= self.year_level <= 4:
+            return int(self.year_level)
         import re
         code_str = (self.code or "").strip().upper()
         m = re.search(r'([1-4])\d\d', code_str)
         if m:
             return int(m.group(1))
-        return self.year_level or 1
+        return 1
 
     @property
     def classification(self) -> str:

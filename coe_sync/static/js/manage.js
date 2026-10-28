@@ -536,7 +536,8 @@ window.submitFacultyDetailedEdit = async function (e) {
       email,
       max_units: maxUnits,
       preferred_session_type: sessionPref,
-      availability
+      availability,
+      availabilities: availability
     });
     showToast(res.message || "Profile & availability updated successfully!");
     closeFacultyDetailedEditModal();

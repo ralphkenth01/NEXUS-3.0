@@ -499,7 +499,7 @@
       </div>
       <div style="background: var(--bg-hover, #F9FAFB); border: 1px solid var(--border-light); border-radius: 8px; padding: 12px;">
         <h4 style="font-size: 13px; margin: 0 0 8px 0; color: var(--bulsu-maroon);">+ Add Blackout Window</h4>
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 8px;">
           <div>
             <label style="font-size: 11px; font-weight: 600;">Day</label>
             <select id="new-avail-day" class="form-select" style="font-size: 12px; width: 100%;">
@@ -509,6 +509,13 @@
               <option value="THU">Thursday</option>
               <option value="FRI">Friday</option>
               <option value="SAT">Saturday</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size: 11px; font-weight: 600;">Type</label>
+            <select id="new-avail-type" class="form-select" style="font-size: 12px; width: 100%;">
+              <option value="false">Blackout</option>
+              <option value="true">Preferred</option>
             </select>
           </div>
           <div>
@@ -536,7 +543,7 @@
           </div>
         </div>
         <button type="button" id="btn-save-new-avail" class="btn btn-sm btn-primary" style="margin-top: 10px; width: 100%;">
-          Add Blackout Window
+          Save Window Preference
         </button>
       </div>
     </div>

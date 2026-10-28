@@ -507,12 +507,17 @@ function cascadeScheduleFilters() {
         });
       }
     } else {
+      const selectedSecId = document.getElementById("filter-section")?.value;
+      const selectedSec = selectedSecId ? _masterData.sections.find(s => String(s.id) === String(selectedSecId)) : null;
+      const effectiveSecYear = selectedSec ? String(selectedSec.year_level) : yearVal;
+      const effectiveSecProg = selectedSec ? normalizeProgram(selectedSec.program) : normProg;
+
       filtered = filtered.filter(s => {
-        if (normProg) {
+        if (effectiveSecProg) {
           const sp = normalizeProgram(s.program);
-          if (sp !== normProg && sp !== "GEN") return false;
+          if (sp !== effectiveSecProg && sp !== "GEN") return false;
         }
-        if (yearVal && String(s.year_level) !== String(yearVal)) return false;
+        if (effectiveSecYear && s.year_level && String(s.year_level) !== String(effectiveSecYear)) return false;
         if (termVal && s.semester && String(s.semester) !== String(termVal)) return false;
         return true;
       });
@@ -1410,6 +1415,7 @@ async function openFacultyAvailabilityModal(facultyId) {
   if (addBtn) {
     addBtn.onclick = async () => {
       const day = document.getElementById("new-avail-day")?.value || "FRI";
+      const isPref = document.getElementById("new-avail-type")?.value === "true";
       const start = document.getElementById("new-avail-start")?.value || "08:00";
       const end = document.getElementById("new-avail-end")?.value || "12:00";
 
@@ -1420,15 +1426,15 @@ async function openFacultyAvailabilityModal(facultyId) {
           day_of_week: day,
           start_time: start,
           end_time: end,
-          is_preferred: false,
+          is_preferred: isPref,
         });
-        showToast("Blackout window successfully registered.", "success");
+        showToast("Window preference successfully saved.", "success");
         await renderFacultyAvailabilities(facultyId);
       } catch (err) {
-        showToast(err.message || "Failed to add blackout window.", "error");
+        showToast(err.message || "Failed to save window preference.", "error");
       } finally {
         addBtn.disabled = false;
-        addBtn.textContent = "Add Blackout Window";
+        addBtn.textContent = "Save Window Preference";
       }
     };
   }
@@ -1444,24 +1450,24 @@ async function openFacultyAvailabilityModal(facultyId) {
 async function renderFacultyAvailabilities(facultyId) {
   const listEl = document.getElementById("fac-avail-list");
   if (!listEl) return;
-  listEl.innerHTML = `<div style="font-size: 12px; color: var(--text-muted); padding: 8px;">Loading blackout windows…</div>`;
+  listEl.innerHTML = `<div style="font-size: 12px; color: var(--text-muted); padding: 8px;">Loading availability records…</div>`;
 
   try {
     const res = await API.getFacultyAvailability(facultyId);
     const avails = res?.data || [];
     if (avails.length === 0) {
-      listEl.innerHTML = `<div style="font-size: 12px; color: var(--text-muted); padding: 8px; font-style: italic;">No blackout windows registered. Faculty is available during normal scheduling hours.</div>`;
+      listEl.innerHTML = `<div style="font-size: 12px; color: var(--text-muted); padding: 8px; font-style: italic;">No specific windows registered. Faculty is available during normal scheduling hours.</div>`;
       return;
     }
 
     listEl.innerHTML = avails.map(a => `
-      <div style="display: flex; justify-content: space-between; align-items: center; background: #FFF5F5; border: 1px solid #FECACA; border-radius: 6px; padding: 8px 12px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; background: ${a.is_preferred ? '#EEF2FF' : '#FFF5F5'}; border: 1px solid ${a.is_preferred ? '#C7D2FE' : '#FECACA'}; border-radius: 6px; padding: 8px 12px;">
         <div>
-          <strong style="font-size: 13px; color: #991B1B;">${escapeHtml(a.day_of_week)}</strong>
-          <span style="font-size: 12px; color: #7F1D1D; margin-left: 8px;">${formatTimeTo12(a.start_time)} – ${formatTimeTo12(a.end_time)}</span>
-          <span class="status-badge crimson" style="font-size: 10px; margin-left: 8px;">BLACKOUT</span>
+          <strong style="font-size: 13px; color: ${a.is_preferred ? '#3730A3' : '#991B1B'};">${escapeHtml(a.day_of_week)}</strong>
+          <span style="font-size: 12px; color: ${a.is_preferred ? '#4338CA' : '#7F1D1D'}; margin-left: 8px;">${formatTimeTo12(a.start_time)} – ${formatTimeTo12(a.end_time)}</span>
+          <span class="status-badge ${a.is_preferred ? 'mint' : 'crimson'}" style="font-size: 10px; margin-left: 8px;">${a.is_preferred ? 'PREFERRED' : 'BLACKOUT'}</span>
         </div>
-        <button type="button" class="btn btn-sm btn-ghost btn-del-avail" data-avail-id="${a.id}" style="color: #DC2626; cursor: pointer;" title="Remove this blackout window">
+        <button type="button" class="btn btn-sm btn-ghost btn-del-avail" data-avail-id="${a.id}" style="color: #DC2626; cursor: pointer;" title="Remove this window">
           ✕ Remove
         </button>
       </div>

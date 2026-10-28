@@ -406,10 +406,11 @@ def update_faculty(faculty_id: int):
         if sess_pref in {"SPLIT", "STRAIGHT"}:
             faculty.preferred_session_type = sess_pref
 
-    if "availabilities" in data and isinstance(data["availabilities"], list):
+    avails_data = data.get("availabilities") if "availabilities" in data else data.get("availability")
+    if avails_data is not None and isinstance(avails_data, list):
         # Update or set availability windows
         FacultyAvailability.query.filter_by(faculty_id=faculty_id).delete()
-        for item in data["availabilities"]:
+        for item in avails_data:
             day = (item.get("day_of_week") or "").strip().upper()
             if day in {"MON", "TUE", "WED", "THU", "FRI", "SAT"}:
                 st_parts = [int(p) for p in str(item.get("start_time", "08:00")).split(":")[:2]]

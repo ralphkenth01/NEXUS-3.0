@@ -154,6 +154,38 @@ def run_smart_scheduler(config: Dict[str, Any], user_id: Optional[int] = None) -
         except (ValueError, TypeError):
             pass
 
+    # Per-program default curriculum fallback map (uses newest active curriculum)
+    default_curricula_by_prog = {}
+    for c in Curriculum.query.order_by(Curriculum.revision_year.desc(), Curriculum.id.desc()).all():
+        p_code = normalize_prog_code(c.program)
+        if p_code not in default_curricula_by_prog:
+            default_curricula_by_prog[p_code] = {
+                cs.subject_id: (cs.year_level, cs.semester)
+                for cs in CurriculumSubject.query.filter_by(curriculum_id=c.id).all()
+            }
+
+    # Automatically purge existing schedules for target sections and active semester when regenerating
+    target_sec_ids = [s.id for s in sections]
+    if target_sec_ids:
+        stale_schedules = (
+            Schedule.query.filter(
+                Schedule.section_id.in_(target_sec_ids),
+            ).all()
+        )
+        if sem_int and stale_schedules:
+            # Only remove schedules matching the semester being generated
+            filtered_schedules = []
+            for d in stale_schedules:
+                if d.subject and d.subject.semester and d.subject.semester != sem_int:
+                    continue
+                filtered_schedules.append(d)
+            stale_schedules = filtered_schedules
+
+        if stale_schedules:
+            for d in stale_schedules:
+                db.session.delete(d)
+            db.session.commit()
+
     subjects = [s for s in Subject.query.order_by(Subject.units.desc()).all() if s.classification == "MAJOR"]
 
     # Time slots for standard classes (Guaranteed 1-hour lunch break: 12:00 - 13:00)
@@ -280,12 +312,13 @@ def run_smart_scheduler(config: Dict[str, Any], user_id: Optional[int] = None) -
     for sec in sections:
         # Match curriculum: only Major subjects corresponding to this section's program and year level
         sec_p = normalize_prog_code(sec.program)
-        if curriculum_subject_map is not None:
+        active_curr_map = curriculum_subject_map or default_curricula_by_prog.get(sec_p)
+        if active_curr_map is not None:
             sec_subjects = [
                 sub for sub in subjects
-                if sub.id in curriculum_subject_map
-                and (not sec.year_level or curriculum_subject_map[sub.id][0] == sec.year_level)
-                and (not sem_int or curriculum_subject_map[sub.id][1] == sem_int)
+                if sub.id in active_curr_map
+                and (not sec.year_level or active_curr_map[sub.id][0] == sec.year_level)
+                and (not sem_int or active_curr_map[sub.id][1] == sem_int)
             ]
         else:
             sec_subjects = [
